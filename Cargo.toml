@@ -1,0 +1,18 @@
+[package]
+name = "amargpu"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+winit = "0.30"
+env_logger = "0.11"
+log = "0.4"
+wgpu = "30.0"
+pollster = "1.0.1"
+bytemuck = { version = "1.24", features = ["derive"] }
+image = { version = "0.25.10", default-features = false, features = [
+    "png",
+    "jpeg",
+] }
+glam = {version = "0.33.3" ,  features = ["bytemuck"] }
