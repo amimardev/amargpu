@@ -1,8 +1,9 @@
 use crate::{
     basic_pipeline::BasicPipeline,
-    buffer::{MeshBufState},
-    camera::CameraContext, 
+    buffer::MeshBufState,
+    camera::CameraContext,
     texture::TextureContext,
+    uniform_vars::{self, UniformVars},
 };
 use std::sync::Arc;
 use wgpu::{Instance, InstanceDescriptor, RequestAdapterError};
@@ -126,6 +127,7 @@ pub struct State {
     mesh_s: MeshBufState,
     texture_c: TextureContext,
     camera_c: CameraContext,
+    uniform_vars: UniformVars,
 }
 
 impl State {
@@ -139,12 +141,15 @@ impl State {
 
         let mesh_s = MeshBufState::new(&glb)?;
 
+        let uniform_vars = UniformVars::new(&glb)?;
+
         Ok(Self {
             glb,
             basic_pipeline,
             texture_c,
             mesh_s,
             camera_c,
+            uniform_vars,
         })
     }
 
@@ -182,6 +187,7 @@ impl State {
 
     pub fn update(&mut self) {
         self.camera_c.update(&self.glb);
+        self.uniform_vars.update(&self.glb);
     }
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.glb.window.request_redraw();

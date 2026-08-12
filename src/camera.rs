@@ -2,14 +2,7 @@ use crate::state::GlobalState;
 use glam::{Mat4, Vec3, Vec4};
 use wgpu::util::DeviceExt;
 use winit::keyboard::KeyCode;
-fn color_to_vec4(color: wgpu::Color) -> glam::Vec4 {
-    glam::Vec4::new(
-        color.r as f32,
-        color.g as f32,
-        color.b as f32,
-        color.a as f32,
-    )
-}
+
 pub struct Camera {
     eye: Vec3,
     target: Vec3,
@@ -87,7 +80,6 @@ pub struct CameraContext {
     controller: CameraController,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
-    global_color_buffer: wgpu::Buffer,
     pub bg_layout: wgpu::BindGroupLayout,
     bg: wgpu::BindGroup,
 }
@@ -107,39 +99,19 @@ impl CameraContext {
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
-        let global_color_buffer =
-            glb.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("Camera Buffer"),
-                    contents: bytemuck::cast_slice(&[color_to_vec4(glb.color)]),
-                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                });
-
         let bg_layout = glb
             .device
             .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
+                    count: None,
+                }],
                 label: Some("camera_bind_group_layout"),
             });
 
@@ -149,11 +121,7 @@ impl CameraContext {
                 wgpu::BindGroupEntry {
                     binding: 0,
                     resource: camera_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: global_color_buffer.as_entire_binding(),
-                },
+                }
             ],
             label: Some("camera_bind_group"),
         });
@@ -163,8 +131,7 @@ impl CameraContext {
             camera,
             controller,
             camera_uniform,
-            camera_buffer,
-            global_color_buffer,
+            camera_buffer, 
             bg_layout,
             bg,
         })
@@ -184,11 +151,6 @@ impl CameraContext {
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
-        );
-        glb.queue.write_buffer(
-            &self.global_color_buffer,
-            0,
-            bytemuck::cast_slice(&[color_to_vec4(glb.color)]),
         );
     }
 }
