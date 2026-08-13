@@ -1,5 +1,6 @@
 use crate::{
-    buffer::Vertex, camera::CameraContext, load_shader_str, state::GlobalState, texture::TextureContext,
+    camera::CameraContext, load_shader_str, mesh::instanceb::InstanceRaw, mesh::meshb::Vertex,
+    state::GlobalState, texture::TextureContext, uniform_vars::UniformVars,
 };
 
 pub struct BasicPipeline {
@@ -9,10 +10,10 @@ pub struct BasicPipeline {
 impl BasicPipeline {
     pub fn new(
         glb: &GlobalState,
-        texture_bind_group_layout: &wgpu::BindGroupLayout,
-        camera_bind_group_layout: &wgpu::BindGroupLayout,
+        texture_bg_layout: &wgpu::BindGroupLayout,
+        camera_bg_layout: &wgpu::BindGroupLayout,
+        uniform_vars_bg_layout: &wgpu::BindGroupLayout,
     ) -> anyhow::Result<Self> {
-
         let shader = glb
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -25,8 +26,9 @@ impl BasicPipeline {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Basic Render Pipeline Layout"),
                     bind_group_layouts: &[
-                        Some(&texture_bind_group_layout),
-                        Some(&camera_bind_group_layout),
+                        Some(&texture_bg_layout),
+                        Some(&camera_bg_layout),
+                        Some(&uniform_vars_bg_layout),
                     ],
                     immediate_size: 0,
                 });
@@ -39,9 +41,10 @@ impl BasicPipeline {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Some(Vertex::desc())],
+                    buffers: &[Some(Vertex::desc()), Some(InstanceRaw::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
+
                 fragment: Some(wgpu::FragmentState {
                     // 3.
                     module: &shader,
@@ -58,7 +61,7 @@ impl BasicPipeline {
                     topology: wgpu::PrimitiveTopology::TriangleList, // 1.
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Ccw, // 2.
-                    cull_mode: Some(wgpu::Face::Back),
+                    cull_mode: None,
                     // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                     polygon_mode: wgpu::PolygonMode::Fill,
                     // Requires Features::DEPTH_CLIP_CONTROL
@@ -87,5 +90,12 @@ impl BasicPipeline {
     }
     pub fn bind_camera(&self, render_pass: &mut wgpu::RenderPass, camera_c: &CameraContext) {
         camera_c.bind(1, render_pass);
+    }
+    pub fn bind_uniform_vars(
+        &self,
+        render_pass: &mut wgpu::RenderPass,
+        uniform_vars: &UniformVars,
+    ) {
+        uniform_vars.bind(2, render_pass);
     }
 }

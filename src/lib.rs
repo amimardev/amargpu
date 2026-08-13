@@ -1,10 +1,10 @@
 mod app;
 mod state;
-mod buffer;
+mod mesh;
 mod texture;
 mod camera;
 mod basic_pipeline;
-mod uniform_vars;
+mod uniform_vars; 
 use crate::app::App;
 
 use winit::event_loop::EventLoop;

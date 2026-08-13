@@ -1,15 +1,23 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use wgpu::util::DeviceExt; 
+use wgpu::util::DeviceExt;
 
 use crate::state::GlobalState;
-fn color_to_vec4(color: wgpu::Color) -> glam::Vec4 {
+pub fn color_to_vec4(color: wgpu::Color) -> glam::Vec4 {
     glam::Vec4::new(
         color.r as f32,
         color.g as f32,
         color.b as f32,
         color.a as f32,
     )
+}
+pub fn vec4_to_color(color: glam::Vec4) -> wgpu::Color {
+    wgpu::Color {
+        r: color.x as f64,
+        g: color.y as f64,
+        b: color.z as f64,
+        a: color.w as f64,
+    }
 }
 pub struct UniformVars {
     loop_timer_buffer: wgpu::Buffer,
@@ -42,7 +50,7 @@ impl UniformVars {
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
                             has_dynamic_offset: false,
@@ -78,8 +86,8 @@ impl UniformVars {
             ],
             label: Some("uniform_vars_bind_group"),
         });
- 
-        Ok(Self { 
+
+        Ok(Self {
             loop_timer_buffer,
             global_color_buffer,
             bg_layout,
@@ -90,14 +98,16 @@ impl UniformVars {
         render_pass.set_bind_group(index, &self.bg, &[]);
     }
 
-
     pub fn get_loop_timer() -> f32 {
-        (SystemTime::now()
+        let mut time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis()
-            % 64) as f32
-            / 64 as f32
+            % 1000;
+        if time > 500 {
+            time = 1000 - time
+        }
+        time as f32 / 500 as f32
     }
 
     pub fn update(&mut self, glb: &GlobalState) {

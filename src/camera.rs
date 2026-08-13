@@ -26,7 +26,7 @@ impl Camera {
         );
 
         // 3.
-        return OPENGL_TO_WGPU_MATRIX * proj * view;
+        return Mat4::inverse(&OPENGL_TO_WGPU_MATRIX) * proj * view;
     }
     pub fn new(config: &wgpu::SurfaceConfiguration) -> Self {
         Camera {
@@ -117,21 +117,19 @@ impl CameraContext {
 
         let bg = glb.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bg_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: camera_buffer.as_entire_binding(),
-                }
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
             label: Some("camera_bind_group"),
         });
 
-        let controller = CameraController::new(0.2);
+        let controller = CameraController::new(0.02);
         Ok(Self {
             camera,
             controller,
             camera_uniform,
-            camera_buffer, 
+            camera_buffer,
             bg_layout,
             bg,
         })

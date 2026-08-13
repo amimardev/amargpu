@@ -1,6 +1,6 @@
 use wgpu::util::DeviceExt;
 
-use crate::state::GlobalState;
+use crate::{mesh::instanceb::InstanceContext, state::GlobalState};
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -23,7 +23,7 @@ impl Vertex {
     }
 }
 
-// Changed
+
 pub const VERTICES: &[Vertex] = &[
     Vertex {
         position: [-0.0868241, 0.49240386, 0.0],
@@ -53,6 +53,7 @@ pub struct MeshBufState {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    instance_c: InstanceContext,
 }
 
 impl MeshBufState {
@@ -73,19 +74,29 @@ impl MeshBufState {
                 usage: wgpu::BufferUsages::INDEX,
             });
         let num_indices = INDICES.len() as u32;
+
+        let instance_c = InstanceContext::new(glb)?;
+
         Ok(Self {
             vertex_buffer,
             index_buffer,
             num_indices,
+            instance_c,
         })
     }
 
-    pub fn bind_and_draw(&self,render_pass : &mut wgpu::RenderPass) {
+    pub fn bind_and_draw(&self, render_pass: &mut wgpu::RenderPass) {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(
-            self.index_buffer.slice(..),
-            wgpu::IndexFormat::Uint16,
+
+        // bind instance buffer
+        render_pass.set_vertex_buffer(1, self.instance_c.instance_buffer.slice(..));
+
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+        render_pass.draw_indexed(
+            0..self.num_indices,
+            0,
+            0..self.instance_c.instances.len() as _,
         );
-        render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
     }
 }

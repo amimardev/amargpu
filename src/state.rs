@@ -1,10 +1,11 @@
 use crate::{
     basic_pipeline::BasicPipeline,
-    buffer::MeshBufState,
     camera::CameraContext,
+    mesh::meshb::MeshBufState,
     texture::TextureContext,
-    uniform_vars::{self, UniformVars},
+    uniform_vars::{UniformVars, color_to_vec4, vec4_to_color},
 };
+use glam::Vec4;
 use std::sync::Arc;
 use wgpu::{Instance, InstanceDescriptor, RequestAdapterError};
 use winit::{
@@ -136,12 +137,16 @@ impl State {
 
         let texture_c = TextureContext::new(&glb)?;
         let camera_c = CameraContext::new(&glb)?;
+        let uniform_vars = UniformVars::new(&glb)?;
 
-        let basic_pipeline = BasicPipeline::new(&glb, &texture_c.bg_layout, &camera_c.bg_layout)?;
+        let basic_pipeline = BasicPipeline::new(
+            &glb,
+            &texture_c.bg_layout,
+            &camera_c.bg_layout,
+            &uniform_vars.bg_layout,
+        )?;
 
         let mesh_s = MeshBufState::new(&glb)?;
-
-        let uniform_vars = UniformVars::new(&glb)?;
 
         Ok(Self {
             glb,
@@ -231,6 +236,15 @@ impl State {
             });
 
         {
+            let loop_timer_color = Vec4::new(
+                UniformVars::get_loop_timer(),
+                1f32 - UniformVars::get_loop_timer(),
+                0.6,
+                1.0,
+            );
+            let final_color = (color_to_vec4(self.glb.color) + loop_timer_color) / 2 as f32;
+            let final_color = vec4_to_color(final_color);
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -238,7 +252,7 @@ impl State {
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.glb.color),
+                        load: wgpu::LoadOp::Clear(final_color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -253,6 +267,8 @@ impl State {
                 .bind_camera(&mut render_pass, &self.camera_c);
             self.basic_pipeline
                 .bind_texture(&mut render_pass, &self.texture_c);
+            self.basic_pipeline
+                .bind_uniform_vars(&mut render_pass, &self.uniform_vars);
             self.mesh_s.bind_and_draw(&mut render_pass);
         }
 
