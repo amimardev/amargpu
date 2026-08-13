@@ -2,7 +2,7 @@ use crate::{
     basic_pipeline::BasicPipeline,
     camera::CameraContext,
     mesh::meshb::MeshBufState,
-    texture::TextureContext,
+    texture::{Texture, TextureContext},
     uniform_vars::{UniformVars, color_to_vec4, vec4_to_color},
 };
 use glam::Vec4;
@@ -129,6 +129,7 @@ pub struct State {
     texture_c: TextureContext,
     camera_c: CameraContext,
     uniform_vars: UniformVars,
+    depth_t: Texture,
 }
 
 impl State {
@@ -148,6 +149,7 @@ impl State {
 
         let mesh_s = MeshBufState::new(&glb)?;
 
+        let depth_t = Texture::create_depth_texture(&glb, "depth_texture");
         Ok(Self {
             glb,
             basic_pipeline,
@@ -155,6 +157,7 @@ impl State {
             mesh_s,
             camera_c,
             uniform_vars,
+            depth_t,
         })
     }
 
@@ -169,6 +172,11 @@ impl State {
                 .configure(&self.glb.device, &self.glb.config);
             self.glb.is_surface_configured = true;
         }
+
+        // must recreate the depth_t with updates dimentions of framebuffer
+        // if not it crashes on use at RenderPass creation by CommandEncoder.
+        self.depth_t =
+            Texture::create_depth_texture(&self.glb, "depth_texture");
     }
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
@@ -256,10 +264,17 @@ impl State {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
                 occlusion_query_set: None,
                 timestamp_writes: None,
                 multiview_mask: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_t.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
             });
 
             self.basic_pipeline.set(&mut render_pass);
