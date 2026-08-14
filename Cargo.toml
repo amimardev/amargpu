@@ -16,3 +16,9 @@ image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
 ] }
 glam = {version = "0.33.3" ,  features = ["bytemuck"] }
+
+
+[build-dependencies]
+anyhow = "1.0"
+fs_extra = "1.2"
+glob = "0.3"

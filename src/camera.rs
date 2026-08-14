@@ -1,15 +1,25 @@
 use crate::state::GlobalState;
-use glam::{Mat4, Vec3, Vec4};
+use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
 use winit::keyboard::KeyCode;
 
 pub struct Camera {
+    /// Camera position.
     eye: Vec3,
+    /// Target point the camera is looking at.
     target: Vec3,
+    /// Up vector, needed to determine the rotation.
     up: Vec3,
+    /// Height / width of the framebuffer.
     aspect: f32,
+    /// Fov_y — the height of the field of view.
     fovy: f32,
+    /// How far the user is from the screen.
+    /// Represents Z=0 for WebGPU as a result.
     znear: f32,
+    /// Value at which to stop the perspective projection and fall back to orthogonal projection.
+    /// The human eye has f=inf for a healthy eye.
+    /// Represents Z=1 for WebGPU as a result.
     zfar: f32,
 }
 
@@ -26,7 +36,7 @@ impl Camera {
         );
 
         // 3.
-        return Mat4::inverse(&OPENGL_TO_WGPU_MATRIX) * proj * view;
+        return proj * view;
     }
     pub fn new(config: &wgpu::SurfaceConfiguration) -> Self {
         Camera {
@@ -44,14 +54,6 @@ impl Camera {
         }
     }
 }
-
-#[rustfmt::skip]
-pub const OPENGL_TO_WGPU_MATRIX: Mat4 = Mat4::from_cols(
-    Vec4::new(1.0, 0.0, 0.0, 0.0),
-    Vec4::new(0.0, 1.0, 0.0, 0.0),
-    Vec4::new(0.0, 0.0, 0.5, 0.0),
-    Vec4::new(0.0, 0.0, 0.5, 1.0),
-);
 
 // We need this for Rust to store our data correctly for the shaders
 #[repr(C)]
