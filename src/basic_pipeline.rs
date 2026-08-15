@@ -1,5 +1,12 @@
 use crate::{
-    camera::CameraContext, load_shader_str, mesh::{instanceb::InstanceRaw, meshb::Vertex}, state::GlobalState, texture::{self, TextureContext}, uniform_vars::UniformVars,
+    game_context::GameContext,
+    load_shader_str,
+    mesh::{
+        instanceb::InstanceRaw,
+        model::{ModelVertex, Vertex},
+    },
+    state::GlobalState,
+    texture::{self},
 };
 
 pub struct BasicPipeline {
@@ -40,7 +47,7 @@ impl BasicPipeline {
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Some(Vertex::desc()), Some(InstanceRaw::desc())],
+                    buffers: &[Some(ModelVertex::desc()), Some(InstanceRaw::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
 
@@ -90,16 +97,11 @@ impl BasicPipeline {
     pub fn set(&self, render_pass: &mut wgpu::RenderPass) {
         render_pass.set_pipeline(&self.render_pipeline);
     }
-    pub fn bind_texture(&self, render_pass: &mut wgpu::RenderPass, texture_c: &TextureContext) {
-        texture_c.bind(0, render_pass);
-    }
-    pub fn bind_camera(&self, render_pass: &mut wgpu::RenderPass, camera_c: &CameraContext) {
-        camera_c.bind(1, render_pass);
-    }
+
     pub fn bind_uniform_vars(
         &self,
         render_pass: &mut wgpu::RenderPass,
-        uniform_vars: &UniformVars,
+        uniform_vars: &GameContext,
     ) {
         uniform_vars.bind(2, render_pass);
     }

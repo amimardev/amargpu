@@ -16,7 +16,7 @@ image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
 ] }
 glam = {version = "0.33.3" ,  features = ["bytemuck"] }
-
+tobj = { version = "3.2", default-features = false, features = ["async"]}
 
 [build-dependencies]
 anyhow = "1.0"

@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use crate::state::State;
 use winit::{
-    application::ApplicationHandler,
-    event::*,
-    event_loop::{ActiveEventLoop},
-    keyboard::{ PhysicalKey},
+    application::ApplicationHandler, event::*, event_loop::ActiveEventLoop, keyboard::PhysicalKey,
     window::Window,
 };
 
@@ -59,10 +56,7 @@ impl ApplicationHandler<State> for App {
                     }
                 }
             }
-            WindowEvent::CursorMoved {
-                position,
-                ..
-            } => {
+            WindowEvent::CursorMoved { position, .. } => {
                 state.handle_mouse_moved(position);
             }
             WindowEvent::KeyboardInput {
@@ -74,6 +68,11 @@ impl ApplicationHandler<State> for App {
                     },
                 ..
             } => state.handle_key(event_loop, code, key_state.is_pressed()),
+            WindowEvent::MouseInput {
+                state : key_state,
+                button : code,
+                ..
+            } => state.handle_mouse_key(event_loop, code, key_state.is_pressed()),
             _ => {}
         }
     }

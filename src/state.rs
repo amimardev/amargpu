@@ -1,18 +1,15 @@
 use crate::{
     basic_pipeline::BasicPipeline,
     camera::CameraContext,
-    mesh::meshb::MeshBufState,
-    texture::{Texture, TextureContext},
-    uniform_vars::{UniformVars, color_to_vec4, vec4_to_color},
+    game_context::{GameContext, GameHandler, color_to_vec4, vec4_to_color},
+    mesh::model::{DrawModel, ModelStore},
+    texture::{Texture, TextureState},
 };
 use glam::Vec4;
 use std::sync::Arc;
 use wgpu::{Instance, InstanceDescriptor, RequestAdapterError};
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize},
-    event_loop::ActiveEventLoop,
-    keyboard::KeyCode,
-    window::Window,
+    dpi::{PhysicalPosition, PhysicalSize}, event::MouseButton, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
 };
 
 // This will store the state of our game
@@ -122,13 +119,16 @@ impl GlobalState {
     // endregion
 }
 
+/// Context is for custom or single instance objects
+/// state is for single insstance structs
 pub struct State {
     glb: GlobalState,
     basic_pipeline: BasicPipeline,
-    mesh_s: MeshBufState,
-    texture_c: TextureContext,
-    camera_c: CameraContext,
-    uniform_vars: UniformVars,
+    model_s: ModelStore,
+    camera_ctx: CameraContext,
+    game_ctx: GameContext,
+    #[allow(unused)]
+    texture_s: TextureState,
     depth_t: Texture,
 }
 
@@ -136,27 +136,26 @@ impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let glb = GlobalState::new(window).await?;
 
-        let texture_c = TextureContext::new(&glb)?;
-        let camera_c = CameraContext::new(&glb)?;
-        let uniform_vars = UniformVars::new(&glb)?;
-
+        let texture_s = TextureState::new(&glb)?;
+        let camera_ctx = CameraContext::new(&glb)?;
+        let game_ctx = GameContext::new(&glb)?;
         let basic_pipeline = BasicPipeline::new(
             &glb,
-            &texture_c.bg_layout,
-            &camera_c.bg_layout,
-            &uniform_vars.bg_layout,
+            &texture_s.bg_layout,
+            &camera_ctx.bg_layout,
+            &game_ctx.bg_layout,
         )?;
 
-        let mesh_s = MeshBufState::new(&glb)?;
+        let model_s = ModelStore::new_default(&glb, &texture_s.bg_layout)?;
 
         let depth_t = Texture::create_depth_texture(&glb, "depth_texture");
         Ok(Self {
             glb,
             basic_pipeline,
-            texture_c,
-            mesh_s,
-            camera_c,
-            uniform_vars,
+            model_s,
+            camera_ctx,
+            texture_s,
+            game_ctx,
             depth_t,
         })
     }
@@ -175,32 +174,36 @@ impl State {
 
         // must recreate the depth_t with updates dimentions of framebuffer
         // if not it crashes on use at RenderPass creation by CommandEncoder.
-        self.depth_t =
-            Texture::create_depth_texture(&self.glb, "depth_texture");
+        self.depth_t = Texture::create_depth_texture(&self.glb, "depth_texture");
     }
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
-            (KeyCode::Space, true) => self.texture_c.swap(),
             _ => {
-                self.camera_c.handle_key(code, is_pressed);
+                self.camera_ctx.handle_key(code, is_pressed);
+                self.game_ctx
+                    .handle_key(code, is_pressed, &mut self.glb, &mut self.model_s);
+            }
+        }
+    }
+    pub fn handle_mouse_key(&mut self, event_loop: &ActiveEventLoop, code: MouseButton, is_pressed: bool) {
+        match (code, is_pressed) {
+            _ => {
+                self.game_ctx
+                    .handle_mouse_key(code, is_pressed, &mut self.glb, &mut self.model_s);
             }
         }
     }
 
     pub fn handle_mouse_moved(&mut self, position: PhysicalPosition<f64>) {
-        self.glb.color = wgpu::Color {
-            r: position.x / self.glb.config.width as f64,
-            g: position.y / self.glb.config.width as f64,
-            b: 0.5,
-            a: 1.0,
-        }
+        self.game_ctx
+            .handle_mouse_moved(position, &mut self.glb, &mut self.model_s);
     }
     // endregion
 
     pub fn update(&mut self) {
-        self.camera_c.update(&self.glb);
-        self.uniform_vars.update(&self.glb);
+        self.camera_ctx.update(&self.glb);
+        self.game_ctx.update(&mut self.glb);
     }
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.glb.window.request_redraw();
@@ -244,15 +247,6 @@ impl State {
             });
 
         {
-            let loop_timer_color = Vec4::new(
-                UniformVars::get_loop_timer(),
-                1f32 - UniformVars::get_loop_timer(),
-                0.6,
-                1.0,
-            );
-            let final_color = (color_to_vec4(self.glb.color) + loop_timer_color) / 2 as f32;
-            let final_color = vec4_to_color(final_color);
-
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -260,7 +254,7 @@ impl State {
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(final_color),
+                        load: wgpu::LoadOp::Clear(self.glb.color),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -277,17 +271,11 @@ impl State {
                 }),
             });
 
-            self.basic_pipeline.set(&mut render_pass);
-            self.basic_pipeline
-                .bind_camera(&mut render_pass, &self.camera_c);
-            self.basic_pipeline
-                .bind_texture(&mut render_pass, &self.texture_c);
-            self.basic_pipeline
-                .bind_uniform_vars(&mut render_pass, &self.uniform_vars);
-            self.mesh_s.bind_and_draw(&mut render_pass);
+            self.game_ctx
+                .render(&mut render_pass, &self.glb, &self.model_s,&self.basic_pipeline,&self.camera_ctx);
+
         }
 
-        // submit will accept anything that implements IntoIter
         self.glb.queue.submit(std::iter::once(encoder.finish()));
         self.glb.queue.present(output);
 

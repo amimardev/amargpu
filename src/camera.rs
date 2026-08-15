@@ -83,7 +83,7 @@ pub struct CameraContext {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     pub bg_layout: wgpu::BindGroupLayout,
-    bg: wgpu::BindGroup,
+    pub bg: wgpu::BindGroup,
 }
 
 impl CameraContext {
@@ -136,9 +136,7 @@ impl CameraContext {
             bg,
         })
     }
-    pub fn bind(&self, index: u32, render_pass: &mut wgpu::RenderPass) {
-        render_pass.set_bind_group(index, &self.bg, &[]);
-    }
+
 
     pub fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
         self.controller.handle_key(code, is_pressed)

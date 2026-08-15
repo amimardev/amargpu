@@ -4,7 +4,7 @@ mod mesh;
 mod texture;
 mod camera;
 mod basic_pipeline;
-mod uniform_vars; 
+mod game_context; 
 use crate::app::App;
 
 use winit::event_loop::EventLoop;

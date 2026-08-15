@@ -1,8 +1,15 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use wgpu::util::DeviceExt;
+use glam::Vec4;
+use wgpu::{Color, util::DeviceExt};
+use winit::{dpi::PhysicalPosition, event::MouseButton, keyboard::KeyCode};
 
-use crate::state::GlobalState;
+use crate::{
+    basic_pipeline::BasicPipeline,
+    camera::CameraContext,
+    mesh::model::{DrawModel, ModelStore},
+    state::GlobalState,
+};
 pub fn color_to_vec4(color: wgpu::Color) -> glam::Vec4 {
     glam::Vec4::new(
         color.r as f32,
@@ -19,20 +26,52 @@ pub fn vec4_to_color(color: glam::Vec4) -> wgpu::Color {
         a: color.w as f64,
     }
 }
-pub struct UniformVars {
+pub trait GameHandler {
+    fn update(&mut self, glb: &mut GlobalState);
+    fn handle_mouse_moved(
+        &mut self,
+        position: PhysicalPosition<f64>,
+        glb: &mut GlobalState,
+        models: &mut ModelStore,
+    );
+    fn handle_key(
+        &mut self,
+        code: KeyCode,
+        is_pressed: bool,
+        glb: &mut GlobalState,
+        models: &mut ModelStore,
+    );
+    fn handle_mouse_key(
+        &mut self,
+        code: MouseButton,
+        is_pressed: bool,
+        glb: &mut GlobalState,
+        models: &mut ModelStore,
+    );
+    fn render(
+        &self,
+        render_pass: &mut wgpu::RenderPass,
+        glb: &GlobalState,
+        model_s: &ModelStore,
+        basic_pipeline: &BasicPipeline,
+        camera_ctx: &CameraContext,
+    );
+}
+pub struct GameContext {
     loop_timer_buffer: wgpu::Buffer,
     global_color_buffer: wgpu::Buffer,
     pub bg_layout: wgpu::BindGroupLayout,
     bg: wgpu::BindGroup,
+    mouse_move_color: wgpu::Color,
 }
 
-impl UniformVars {
+impl GameContext {
     pub fn new(glb: &GlobalState) -> anyhow::Result<Self> {
         let loop_timer_buffer = glb
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Loop Time Buffer"),
-                contents: bytemuck::cast_slice(&[Self::get_loop_timer()]),
+                contents: bytemuck::cast_slice(&[get_loop_timer()]),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
 
@@ -92,29 +131,24 @@ impl UniformVars {
             global_color_buffer,
             bg_layout,
             bg,
+            mouse_move_color : Color::WHITE
         })
     }
     pub fn bind(&self, index: u32, render_pass: &mut wgpu::RenderPass) {
         render_pass.set_bind_group(index, &self.bg, &[]);
     }
+}
 
-    pub fn get_loop_timer() -> f32 {
-        let mut time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-            % 1000;
-        if time > 500 {
-            time = 1000 - time
-        }
-        time as f32 / 500 as f32
-    }
-
-    pub fn update(&mut self, glb: &GlobalState) {
+impl GameHandler for GameContext {
+    fn update(&mut self, glb: &mut GlobalState) {
+        let loop_timer_color = Vec4::new(get_loop_timer(), 1f32 - get_loop_timer(), 0.6, 1.0);
+        let final_color = (color_to_vec4(self.mouse_move_color) + loop_timer_color) / 2 as f32;
+        glb.color = vec4_to_color(final_color);
+        
         glb.queue.write_buffer(
             &self.loop_timer_buffer,
             0,
-            bytemuck::cast_slice(&[Self::get_loop_timer()]),
+            bytemuck::cast_slice(&[get_loop_timer()]),
         );
         glb.queue.write_buffer(
             &self.global_color_buffer,
@@ -122,4 +156,61 @@ impl UniformVars {
             bytemuck::cast_slice(&[color_to_vec4(glb.color)]),
         );
     }
+    fn handle_mouse_moved(
+        &mut self,
+        position: PhysicalPosition<f64>,
+        glb: &mut GlobalState,
+        models: &mut ModelStore,
+    ) {
+        self.mouse_move_color = wgpu::Color {
+            r: position.x / glb.config.width as f64,
+            g: position.y / glb.config.width as f64,
+            b: 0.5,
+            a: 1.0,
+        };
+    }
+    fn handle_key(
+        &mut self,
+        code: KeyCode,
+        is_pressed: bool,
+        glb: &mut GlobalState,
+        models: &mut ModelStore,
+    ) {
+        // handle key press
+    }
+
+    fn render(
+        &self,
+        render_pass: &mut wgpu::RenderPass,
+        glb: &GlobalState,
+        model_s: &ModelStore,
+        basic_pipeline: &BasicPipeline,
+        camera_ctx: &CameraContext,
+    ) {
+        basic_pipeline.set(render_pass);
+        basic_pipeline.bind_uniform_vars(render_pass, &self);
+        model_s.draw_model_instanced(render_pass, "cube", &camera_ctx.bg, "default");
+    }
+
+    fn handle_mouse_key(
+        &mut self,
+        code: MouseButton,
+        is_pressed: bool,
+        glb: &mut GlobalState,
+        models: &mut ModelStore,
+    ) {
+        todo!("mouse key handled")
+    }
+}
+
+fn get_loop_timer() -> f32 {
+    let mut time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+        % 1000;
+    if time > 500 {
+        time = 1000 - time
+    }
+    time as f32 / 500 as f32
 }

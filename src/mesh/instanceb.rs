@@ -70,13 +70,17 @@ impl Instance {
 
 pub(super) struct InstanceContext {
     pub(super) instances: Vec<Instance>,
-    pub(super) instance_buffer: wgpu::Buffer,
+    pub(super) buffer: wgpu::Buffer,
 }
 impl InstanceContext {
-    pub fn new(glb: &GlobalState) -> anyhow::Result<Self> {
+    pub fn new_default(glb: &GlobalState) -> anyhow::Result<Self> {
+        const SPACE_BETWEEN: f32 = 3.0;
         let instances = (0..NUM_INSTANCES_PER_ROW)
             .flat_map(|z| {
                 (0..NUM_INSTANCES_PER_ROW).map(move |x| {
+                    let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                    let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+
                     let position = Vec3 {
                         x: x as f32,
                         y: 0.0,
@@ -105,7 +109,28 @@ impl InstanceContext {
             });
         Ok(Self {
             instances,
-            instance_buffer,
+            buffer: instance_buffer,
+        })
+    }
+
+    pub fn new_one(glb: &GlobalState) -> anyhow::Result<Self> {
+        let instance = Instance {
+            position: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+        };
+
+        let instance_data = vec![instance.to_raw()];
+        let instances = vec![instance];
+        let instance_buffer = glb
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        Ok(Self {
+            instances,
+            buffer: instance_buffer,
         })
     }
 }

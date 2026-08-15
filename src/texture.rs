@@ -1,7 +1,7 @@
 use anyhow::*;
 use image::GenericImageView;
 
-use crate::{load_image, state::GlobalState};
+use crate::state::GlobalState;
 
 pub struct Texture {
     #[allow(unused)]
@@ -125,62 +125,15 @@ impl Texture {
     }
 }
 
-pub struct TextureContext {
+pub struct TextureState {
     pub bg_layout: wgpu::BindGroupLayout,
-    bgs: Vec<wgpu::BindGroup>,
-    textures: Vec<Texture>,
-    active_id: u32,
 }
 
-impl TextureContext {
+impl TextureState {
     pub fn new(glb: &GlobalState) -> anyhow::Result<Self> {
-        let diffuse_bytes0 = load_image!("happy-tree.png");
-        let diffuse_bytes1 = load_image!("tree.jpeg");
-
-        let diffuse_texture0 = crate::texture::Texture::from_bytes(
-            &glb.device,
-            &glb.queue,
-            diffuse_bytes0,
-            "happy-tree.png",
-        )
-        .unwrap();
-
-        let diffuse_texture1 = crate::texture::Texture::from_bytes(
-            &glb.device,
-            &glb.queue,
-            diffuse_bytes1,
-            "tree.jpeg",
-        )
-        .unwrap();
-
-        let diffuse_bind_group_layout = Self::get_texture_bind_group_layout(&glb.device);
-
-        let diffuse_bind_group0 = Self::get_texture_bind_group(
-            &glb.device,
-            &diffuse_texture0,
-            &diffuse_bind_group_layout,
-        );
-
-        let diffuse_bind_group1 = Self::get_texture_bind_group(
-            &glb.device,
-            &diffuse_texture1,
-            &diffuse_bind_group_layout,
-        );
-
         Ok(Self {
-            bg_layout: diffuse_bind_group_layout,
-            bgs: vec![diffuse_bind_group0, diffuse_bind_group1],
-            textures: vec![diffuse_texture0, diffuse_texture1],
-            active_id: 0,
+            bg_layout: Self::get_texture_bind_group_layout(&glb.device),
         })
-    }
-
-    pub fn bind(&self, index: u32, render_pass: &mut wgpu::RenderPass) {
-        render_pass.set_bind_group(index, &self.bgs[self.active_id as usize], &[]);
-    }
-
-    pub fn swap(&mut self) {
-        self.active_id = if self.active_id == 1 { 0 } else { 1 }
     }
 
     // region: helpers
