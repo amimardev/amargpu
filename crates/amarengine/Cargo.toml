@@ -1,5 +1,5 @@
 [package]
-name = "amargpu"
+name = "amarengine"
 version = "0.1.0"
 edition = "2024"
 
@@ -16,15 +16,12 @@ image = { version = "0.25.10", default-features = false, features = [
     "jpeg",
 ] }
 glam = { version = "0.33.3", features = ["bytemuck"] }
-tobj = { version = "3.2", default-features = false, features = ["async"] }
+tobj = { version = "3.2", default-features = false, features = ["async"] } 
 
-amarengine = { path = "crates/amarengine" }
 
 [build-dependencies]
 anyhow = "1.0"
 fs_extra = "1.2"
 glob = "0.3"
 
-
-[workspace]
-members = [".", "crates/*"]
+ 

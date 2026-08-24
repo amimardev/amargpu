@@ -5,8 +5,9 @@ use std::{
 
 use wgpu::util::DeviceExt;
 
-use crate::{
-    load_image, mesh::model::{Material, Mesh, Model, ModelVertex}, state::GlobalState, texture::Texture,
+use crate::{ 
+    mesh::model::{Material, Mesh, Model, ModelVertex}, 
+    texture::Texture,
 };
 
 pub fn load_texture(
@@ -26,8 +27,7 @@ pub fn load_model(
     layout: &wgpu::BindGroupLayout,
 ) -> anyhow::Result<Model> {
     // region: load_model_string
-    let model_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets/models")
+    let model_path = Path::new("./assets/models") 
         .join(file_name);
     let model_dir = model_path.parent().unwrap();
     let obj_text = std::fs::read_to_string(&model_path)?;
@@ -67,11 +67,7 @@ pub fn load_model(
             label: None,
         });
 
-        materials.push(Material {
-            name: m.name,
-            diffuse_texture,
-            bind_group,
-        })
+        materials.push(Material::new(m.name, diffuse_texture, bind_group))
     }
 
     let meshes = models
@@ -137,7 +133,7 @@ pub fn load_model(
     Ok(Model { meshes, materials })
 }
 
-/* 
+/*
 pub fn load_material(glb: &GlobalState) -> anyhow::Result<Material> {
     let diffuse_bytes0 = load_image!("happy-tree.png");
     let diffuse_bytes1 = load_image!("tree.jpeg");
@@ -155,7 +151,7 @@ pub fn load_material(glb: &GlobalState) -> anyhow::Result<Material> {
             .unwrap();
 
     todo!();
-    
+
     let diffuse_bind_group_layout = Self::get_texture_bind_group_layout(&glb.device);
 
     let diffuse_bind_group0 =

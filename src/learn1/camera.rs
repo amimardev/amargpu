@@ -1,7 +1,10 @@
-use crate::state::GlobalState;
+use amarengine::{
+    bg_index, input_handler::InputHandler, registry::registry_view::PluginRegistryView,
+    state::GlobalState,
+};
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
-use winit::keyboard::KeyCode;  
+use winit::keyboard::KeyCode;
 pub struct Camera {
     /// Camera position.
     eye: Vec3,
@@ -74,14 +77,14 @@ impl CameraUniform {
     pub fn update_view_proj(&mut self, camera: &Camera) {
         self.view_proj = camera.build_view_projection_matrix().to_cols_array_2d();
     }
-} 
+}
 pub struct CameraContext {
     camera: Camera,
     controller: CameraController,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     pub bg_layout: wgpu::BindGroupLayout,
-    pub bg: wgpu::BindGroup,
+    bg: wgpu::BindGroup,
 }
 
 impl CameraContext {
@@ -134,20 +137,8 @@ impl CameraContext {
             bg,
         })
     }
-
-
-    pub fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
-        self.controller.handle_key(code, is_pressed)
-    }
-
-    pub fn update(&mut self, glb: &GlobalState) {
-        self.controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
-        glb.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
-        );
+    pub fn bind(&self, render_pass: &mut wgpu::RenderPass) {
+        render_pass.set_bind_group(bg_index::CAMERA, &self.bg, &[]);
     }
 }
 
@@ -170,26 +161,18 @@ impl CameraController {
         }
     }
 
-    fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
-        match code {
-            KeyCode::KeyW | KeyCode::ArrowUp => {
-                self.is_forward_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyA | KeyCode::ArrowLeft => {
-                self.is_left_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyS | KeyCode::ArrowDown => {
-                self.is_backward_pressed = is_pressed;
-                true
-            }
-            KeyCode::KeyD | KeyCode::ArrowRight => {
-                self.is_right_pressed = is_pressed;
-                true
-            }
-            _ => false,
-        }
+    fn handle_key(&mut self, input_handler: &InputHandler) {
+        self.is_forward_pressed =
+            input_handler.is_key_held(KeyCode::KeyW) || input_handler.is_key_held(KeyCode::ArrowUp);
+
+        self.is_left_pressed = input_handler.is_key_held(KeyCode::KeyA)
+            || input_handler.is_key_held(KeyCode::ArrowLeft);
+
+        self.is_backward_pressed = input_handler.is_key_held(KeyCode::KeyS)
+            || input_handler.is_key_held(KeyCode::ArrowDown);
+
+        self.is_right_pressed = input_handler.is_key_held(KeyCode::KeyD)
+            || input_handler.is_key_held(KeyCode::ArrowRight);
     }
 
     fn update_camera(&self, camera: &mut Camera) {
@@ -221,4 +204,21 @@ impl CameraController {
             camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag;
         }
     }
+}
+
+pub fn sys_handle_camera(
+    (camera_ctx, input_handler, glb): &mut (CameraContext, InputHandler, GlobalState),
+    _: PluginRegistryView,
+) {
+    camera_ctx.controller.handle_key(input_handler);
+
+    camera_ctx.controller.update_camera(&mut camera_ctx.camera);
+    camera_ctx
+        .camera_uniform
+        .update_view_proj(&camera_ctx.camera);
+    glb.queue.write_buffer(
+        &camera_ctx.camera_buffer,
+        0,
+        bytemuck::cast_slice(&[camera_ctx.camera_uniform]),
+    );
 }

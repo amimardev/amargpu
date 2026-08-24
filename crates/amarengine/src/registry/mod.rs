@@ -1,19 +1,17 @@
 mod fetch_macros;
 mod label_index;
+pub mod registry_view;
+pub mod static_ptr;
+pub mod sys_runner;
 
+use winit::event_loop::ActiveEventLoop;
+
+use crate::plugins::Plugin;
 use crate::registry::label_index::LabelIndex;
+use crate::registry::registry_view::PluginRegistryView;
+use crate::registry::static_ptr::StaticRef;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-
-pub trait FetchRes: Sized {
-    fn take(registry: &mut ResourceRegistry) -> Option<Self>;
-    fn put_back(self, registry: &mut ResourceRegistry);
-}
-pub trait FetchEntity: Sized {
-    type Maps;
-    fn take(registry: &mut ResourceRegistry) -> Option<Self::Maps>;
-    fn put_back(maps: Self::Maps, registry: &mut ResourceRegistry);
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EntityId(u64);
@@ -28,16 +26,19 @@ impl EntityIdAllocator {
         id
     }
 }
-
+pub type EventLoopRef = StaticRef<ActiveEventLoop>;
 #[derive(Default)]
 pub struct ResourceRegistry {
     stores: HashMap<TypeId, Box<dyn Any>>, // TypeId -> HashMap<EntityId, T>
-    resources: HashMap<TypeId, Box<dyn Any>>, // unchanged, singleton resources
+    resources: HashMap<TypeId, Box<dyn Any>>, // unchan
     ids: EntityIdAllocator,
     labels: LabelIndex,
 }
 
 impl ResourceRegistry {
+    pub fn view(&mut self) -> PluginRegistryView<'_> {
+        PluginRegistryView { registry: self }
+    }
     // region: CRUD entities
     pub fn spawn<T: 'static>(&mut self, label: Option<&str>, value: T) -> EntityId {
         let id = self.ids.next();
@@ -108,7 +109,9 @@ impl ResourceRegistry {
         self.labels.remove(id);
         Some(value)
     }
-    fn remove_map<T: 'static>(&mut self) -> Option<HashMap<EntityId, T>> {
+
+    // endregion
+    pub(super) fn remove_map<T: 'static>(&mut self) -> Option<HashMap<EntityId, T>> {
         Some(
             *self
                 .stores
@@ -117,21 +120,9 @@ impl ResourceRegistry {
                 .unwrap(),
         )
     }
-    fn insert_map<T: 'static>(&mut self, map: HashMap<EntityId, T>) {
+    pub(super) fn insert_map<T: 'static>(&mut self, map: HashMap<EntityId, T>) {
         self.stores.insert(TypeId::of::<T>(), Box::new(map));
     }
-
-    pub fn with_maps_mut<Tup: FetchEntity, R>(
-        &mut self,
-        f: impl FnOnce(&mut Tup::Maps, &mut Self) -> R,
-    ) -> Option<R> {
-        let mut maps = Tup::take(self)?;
-        let result = f(&mut maps, self);
-        Tup::put_back(maps, self);
-        Some(result)
-    }
-    // endregion
-   
     // region: CRUD resources
     pub fn insert_res<T: 'static>(&mut self, value: T) {
         self.resources
@@ -154,14 +145,5 @@ impl ResourceRegistry {
         boxed.downcast::<T>().ok().map(|b| *b)
     }
 
-    pub fn with_res_mut<Tup: FetchRes, R>(
-        &mut self,
-        f: impl FnOnce(&mut Tup, &mut Self) -> R,
-    ) -> Option<R> {
-        let mut tup = Tup::take(self)?;
-        let result = f(&mut tup, self);
-        tup.put_back(self);
-        Some(result)
-    }
     // endregion
 }

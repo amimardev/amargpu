@@ -1,16 +1,12 @@
-use crate::{
-    bg_index,
-    game_context::GameContext,
-    load_shader_str,
-    mesh::{
-        instanceb::InstanceRaw,
-        model::{ModelVertex, Vertex},
-    },
+use amarengine::{ 
+    mesh::model::{ModelVertex, Vertex},
     state::GlobalState,
-    texture::{self},
+    texture::Texture,
 };
 
-pub struct DefaultPipeline {}
+use crate::{learn1::game_context::GameContext, load_shader_str, other_bg_index};
+
+pub struct DefaultPipeline;
 
 impl DefaultPipeline {
     pub fn new(
@@ -77,7 +73,7 @@ impl DefaultPipeline {
                     conservative: false,
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: texture::Texture::DEPTH_FORMAT,
+                    format: Texture::DEPTH_FORMAT,
                     depth_write_enabled: Some(true),
                     depth_compare: Some(wgpu::CompareFunction::Less), // 1.
                     stencil: wgpu::StencilState::default(),           // 2.
@@ -96,6 +92,6 @@ impl DefaultPipeline {
     }
 
     pub fn bind_uniform_vars(render_pass: &mut wgpu::RenderPass, uniform_vars: &GameContext) {
-        uniform_vars.bind(bg_index::GAME, render_pass);
+        uniform_vars.bind(other_bg_index::GAME, render_pass);
     }
 }

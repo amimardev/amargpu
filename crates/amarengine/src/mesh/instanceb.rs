@@ -2,7 +2,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use wgpu::{BindGroupLayout, util::DeviceExt};
 
-use crate::state::GlobalState;
+use crate::{bg_index, state::GlobalState};
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 const INSTANCE_DISPLACEMENT: Vec3 = Vec3::new(
@@ -32,9 +32,9 @@ impl Instance {
 }
 
 pub struct InstanceContext {
-    pub(super) instances: Vec<Instance>,
+    pub instances: Vec<Instance>,
     pub(super) buffer: wgpu::Buffer,
-    pub(super) bg: wgpu::BindGroup,
+    pub(crate) bg: wgpu::BindGroup,
 }
 impl InstanceContext {
     pub fn new_default(
@@ -169,6 +169,6 @@ impl InstanceContext {
     }
 
     pub fn bind(&self, render_pass: &mut wgpu::RenderPass) {
-        render_pass.set_bind_group(3, &self.bg, &[]);
+        render_pass.set_bind_group(bg_index::INSTANCES, &self.bg, &[]);
     }
 }

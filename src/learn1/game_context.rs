@@ -2,10 +2,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use glam::Vec4;
 use wgpu::{Color, util::DeviceExt};
-use winit::{dpi::PhysicalPosition, event::MouseButton, keyboard::KeyCode};
+use winit::{dpi::PhysicalPosition, event_loop::ActiveEventLoop};
 
-use crate::{
-    default_pipeline::DefaultPipeline, keys, mesh::model::DrawModel, registry::ResourceRegistry, state::GlobalState,
+use amarengine::{
+    input_handler::InputHandler,
+    registry::{registry_view::PluginRegistryView, static_ptr::StaticRef},
+    state::GlobalState,
 };
 pub fn color_to_vec4(color: wgpu::Color) -> glam::Vec4 {
     glam::Vec4::new(
@@ -22,35 +24,6 @@ pub fn vec4_to_color(color: glam::Vec4) -> wgpu::Color {
         b: color.z as f64,
         a: color.w as f64,
     }
-}
-pub trait GameHandler {
-    fn update(&mut self, glb: &mut GlobalState);
-    fn handle_mouse_moved(
-        &mut self,
-        position: PhysicalPosition<f64>,
-        glb: &mut GlobalState,
-        registry: &mut ResourceRegistry,
-    );
-    fn handle_key(
-        &mut self,
-        code: KeyCode,
-        is_pressed: bool,
-        glb: &mut GlobalState,
-        registry: &mut ResourceRegistry,
-    );
-    fn handle_mouse_key(
-        &mut self,
-        code: MouseButton,
-        is_pressed: bool,
-        glb: &mut GlobalState,
-        registry: &mut ResourceRegistry,
-    );
-    fn render(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        glb: &GlobalState,
-        registry: &mut ResourceRegistry,
-    );
 }
 
 pub struct GameContext {
@@ -135,70 +108,6 @@ impl GameContext {
     }
 }
 
-impl GameHandler for GameContext {
-    fn update(&mut self, glb: &mut GlobalState) {
-        let loop_timer_color = Vec4::new(get_loop_timer(), 1f32 - get_loop_timer(), 0.6, 1.0);
-        let final_color = (color_to_vec4(self.mouse_move_color) + loop_timer_color) / 2 as f32;
-        glb.color = vec4_to_color(final_color);
-
-        glb.queue.write_buffer(
-            &self.loop_timer_buffer,
-            0,
-            bytemuck::cast_slice(&[get_loop_timer()]),
-        );
-        glb.queue.write_buffer(
-            &self.global_color_buffer,
-            0,
-            bytemuck::cast_slice(&[color_to_vec4(glb.color)]),
-        );
-    }
-    fn handle_mouse_moved(
-        &mut self,
-        position: PhysicalPosition<f64>,
-        glb: &mut GlobalState,
-        registry: &mut ResourceRegistry,
-    ) {
-        self.mouse_move_color = wgpu::Color {
-            r: position.x / glb.config.width as f64,
-            g: position.y / glb.config.width as f64,
-            b: 0.5,
-            a: 1.0,
-        };
-    }
-    fn handle_key(
-        &mut self,
-        code: KeyCode,
-        is_pressed: bool,
-        glb: &mut GlobalState,
-        registry: &mut ResourceRegistry,
-    ) {
-        // handle key press
-    }
-
-    fn render(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        glb: &GlobalState,
-        registry: &mut ResourceRegistry,
-    ) {
-        let default_pipeline = *registry.get_by_label::<wgpu::RenderPipeline>(keys::DEFAULT).first().unwrap();
-
-        render_pass.set_pipeline(&default_pipeline);
-        DefaultPipeline::bind_uniform_vars(render_pass, &self);
-        registry.draw_model_instanced(render_pass, keys::models::CUBE, keys::DEFAULT);
-    }
-
-    fn handle_mouse_key(
-        &mut self,
-        code: MouseButton,
-        is_pressed: bool,
-        glb: &mut GlobalState,
-        registry: &mut ResourceRegistry,
-    ) {
-        todo!("mouse key handled")
-    }
-}
-
 fn get_loop_timer() -> f32 {
     let mut time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -209,4 +118,37 @@ fn get_loop_timer() -> f32 {
         time = 1000 - time
     }
     time as f32 / 500 as f32
+}
+
+pub fn sys_update_game(
+    (game_ctx, glb, event_loop, input_handler): &mut (
+        GameContext,
+        GlobalState,
+        StaticRef<ActiveEventLoop>,
+        InputHandler,
+    ),
+    _: PluginRegistryView,
+) {
+    let loop_timer_color = Vec4::new(get_loop_timer(), 1f32 - get_loop_timer(), 0.6, 1.0);
+    let final_color = (color_to_vec4(game_ctx.mouse_move_color) + loop_timer_color) / 2 as f32;
+    glb.color = vec4_to_color(final_color);
+
+    glb.queue.write_buffer(
+        &game_ctx.loop_timer_buffer,
+        0,
+        bytemuck::cast_slice(&[get_loop_timer()]),
+    );
+    glb.queue.write_buffer(
+        &game_ctx.global_color_buffer,
+        0,
+        bytemuck::cast_slice(&[color_to_vec4(glb.color)]),
+    );
+
+    let position: PhysicalPosition<f64> = input_handler.mouse_position();
+    game_ctx.mouse_move_color = wgpu::Color {
+        r: position.x / glb.config.width as f64,
+        g: position.y / glb.config.width as f64,
+        b: 0.5,
+        a: 1.0,
+    };
 }

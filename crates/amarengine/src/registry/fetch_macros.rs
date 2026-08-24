@@ -1,6 +1,6 @@
-use crate::registry::{EntityId, FetchEntity, FetchRes, ResourceRegistry};
+use crate::registry::sys_runner::{FetchEntity, FetchRes};
+use crate::registry::{EntityId, ResourceRegistry};
 use std::collections::HashMap;
-
 
 macro_rules! impl_fetch_res {
     ($($t:ident),+) => {
