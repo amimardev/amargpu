@@ -152,22 +152,25 @@ impl State {
 
         registry.insert_res(camera_ctx);
         registry.insert_res(game_ctx);
-        registry.insert(keys::DEFAULT, default_pipeline);
-        registry.insert(keys::texture::DEPTH, depth_t);
+        registry.spawn(Some(keys::DEFAULT), default_pipeline);
+        registry.spawn(Some(keys::texture::DEPTH), depth_t);
 
         // initialise cube model and default,one instance_buffers
-        registry.insert(
-            keys::models::CUBE,
+        registry.spawn(
+            Some(keys::models::CUBE),
             load_model("cube/cube.obj", &glb.device, &glb.queue, &diffuse_bg_layout)?,
         );
-        registry.insert(
-            keys::DEFAULT,
+        registry.spawn(
+            Some(keys::DEFAULT),
             InstanceContext::new_default(&glb, &instances_bg_layout)?,
         );
-        registry.insert(keys::ONE_INSTANCE, InstanceContext::new_one(&glb, &instances_bg_layout)?);
+        registry.spawn(
+            Some(keys::ONE_INSTANCE),
+            InstanceContext::new_one(&glb, &instances_bg_layout)?,
+        );
 
-        registry.insert(keys::bg_layout::INSTANCES, instances_bg_layout);
-        registry.insert(keys::bg_layout::DIFFUSE, diffuse_bg_layout);
+        registry.spawn(Some(keys::bg_layout::INSTANCES), instances_bg_layout);
+        registry.spawn(Some(keys::bg_layout::DIFFUSE), diffuse_bg_layout);
 
         Ok(Self { glb, registry })
     }
@@ -216,8 +219,8 @@ impl State {
 
         // must recreate the depth_t with updates dimentions of framebuffer
         // if not it crashes on use at RenderPass creation by CommandEncoder.
-        self.registry.insert(
-            "depth",
+        self.registry.spawn(
+            Some(keys::texture::DEPTH),
             Texture::create_depth_texture(&self.glb, "depth_texture"),
         );
     }
@@ -308,7 +311,11 @@ impl State {
             });
 
         {
-            let depth_t = self.registry.get::<Texture>("depth").unwrap();
+            let depth_t = *self
+                .registry
+                .get_by_label::<Texture>(keys::texture::DEPTH)
+                .first()
+                .unwrap();
 
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),

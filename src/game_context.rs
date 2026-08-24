@@ -181,11 +181,11 @@ impl GameHandler for GameContext {
         glb: &GlobalState,
         registry: &mut ResourceRegistry,
     ) {
-        let default_pipeline = registry.get::<wgpu::RenderPipeline>(keys::DEFAULT).unwrap();
+        let default_pipeline = *registry.get_by_label::<wgpu::RenderPipeline>(keys::DEFAULT).first().unwrap();
 
         render_pass.set_pipeline(&default_pipeline);
         DefaultPipeline::bind_uniform_vars(render_pass, &self);
-        registry.draw_model_instanced(render_pass, "cube", "default");
+        registry.draw_model_instanced(render_pass, keys::models::CUBE, keys::DEFAULT);
     }
 
     fn handle_mouse_key(
