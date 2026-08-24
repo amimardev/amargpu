@@ -1,15 +1,20 @@
 use crate::{
-    basic_pipeline::BasicPipeline,
     camera::CameraContext,
-    game_context::{GameContext, GameHandler, color_to_vec4, vec4_to_color},
-    mesh::model::{DrawModel, ModelStore},
-    texture::{Texture, TextureState},
+    default_pipeline::DefaultPipeline,
+    game_context::{GameContext, GameHandler},
+    keys,
+    mesh::{instanceb::InstanceContext, resource::load_model},
+    registry::ResourceRegistry,
+    texture::Texture,
 };
-use glam::Vec4;
 use std::sync::Arc;
 use wgpu::{Instance, InstanceDescriptor, RequestAdapterError};
 use winit::{
-    dpi::{PhysicalPosition, PhysicalSize}, event::MouseButton, event_loop::ActiveEventLoop, keyboard::KeyCode, window::Window,
+    dpi::{PhysicalPosition, PhysicalSize},
+    event::MouseButton,
+    event_loop::ActiveEventLoop,
+    keyboard::KeyCode,
+    window::Window,
 };
 
 // This will store the state of our game
@@ -123,42 +128,79 @@ impl GlobalState {
 /// state is for single insstance structs
 pub struct State {
     glb: GlobalState,
-    basic_pipeline: BasicPipeline,
-    model_s: ModelStore,
-    camera_ctx: CameraContext,
-    game_ctx: GameContext,
-    #[allow(unused)]
-    texture_s: TextureState,
-    depth_t: Texture,
+    registry: ResourceRegistry,
 }
-
 impl State {
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let glb = GlobalState::new(window).await?;
+        let mut registry = ResourceRegistry::default();
+        let diffuse_bg_layout = Self::get_diffuse_bg_layout(&glb);
 
-        let texture_s = TextureState::new(&glb)?;
         let camera_ctx = CameraContext::new(&glb)?;
         let game_ctx = GameContext::new(&glb)?;
-        let basic_pipeline = BasicPipeline::new(
+        let instances_bg_layout = InstanceContext::create_bind_group_layout(&glb);
+
+        let default_pipeline = DefaultPipeline::new(
             &glb,
-            &texture_s.bg_layout,
+            &diffuse_bg_layout,
             &camera_ctx.bg_layout,
             &game_ctx.bg_layout,
+            &instances_bg_layout,
         )?;
 
-        let model_s = ModelStore::new_default(&glb, &texture_s.bg_layout)?;
-
         let depth_t = Texture::create_depth_texture(&glb, "depth_texture");
-        Ok(Self {
-            glb,
-            basic_pipeline,
-            model_s,
-            camera_ctx,
-            texture_s,
-            game_ctx,
-            depth_t,
-        })
+
+        registry.insert_res(camera_ctx);
+        registry.insert_res(game_ctx);
+        registry.insert(keys::DEFAULT, default_pipeline);
+        registry.insert(keys::texture::DEPTH, depth_t);
+
+        // initialise cube model and default,one instance_buffers
+        registry.insert(
+            keys::models::CUBE,
+            load_model("cube/cube.obj", &glb.device, &glb.queue, &diffuse_bg_layout)?,
+        );
+        registry.insert(
+            keys::DEFAULT,
+            InstanceContext::new_default(&glb, &instances_bg_layout)?,
+        );
+        registry.insert(keys::ONE_INSTANCE, InstanceContext::new_one(&glb, &instances_bg_layout)?);
+
+        registry.insert(keys::bg_layout::INSTANCES, instances_bg_layout);
+        registry.insert(keys::bg_layout::DIFFUSE, diffuse_bg_layout);
+
+        Ok(Self { glb, registry })
     }
+
+    // region: helper functions
+
+    fn get_diffuse_bg_layout(glb: &GlobalState) -> wgpu::BindGroupLayout {
+        glb.device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            })
+    }
+    // endregion
 
     // region: window & input handlers
 
@@ -174,36 +216,55 @@ impl State {
 
         // must recreate the depth_t with updates dimentions of framebuffer
         // if not it crashes on use at RenderPass creation by CommandEncoder.
-        self.depth_t = Texture::create_depth_texture(&self.glb, "depth_texture");
+        self.registry.insert(
+            "depth",
+            Texture::create_depth_texture(&self.glb, "depth_texture"),
+        );
     }
     pub fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
         match (code, is_pressed) {
             (KeyCode::Escape, true) => event_loop.exit(),
             _ => {
-                self.camera_ctx.handle_key(code, is_pressed);
-                self.game_ctx
-                    .handle_key(code, is_pressed, &mut self.glb, &mut self.model_s);
+                let camera_ctx = self.registry.get_res_mut::<CameraContext>().unwrap();
+                camera_ctx.handle_key(code, is_pressed);
+
+                self.registry
+                    .with_res_mut::<(GameContext,), _>(|(game_ctx,), registry| {
+                        game_ctx.handle_key(code, is_pressed, &mut self.glb, registry);
+                    });
             }
         }
     }
-    pub fn handle_mouse_key(&mut self, event_loop: &ActiveEventLoop, code: MouseButton, is_pressed: bool) {
+    pub fn handle_mouse_key(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        code: MouseButton,
+        is_pressed: bool,
+    ) {
         match (code, is_pressed) {
             _ => {
-                self.game_ctx
-                    .handle_mouse_key(code, is_pressed, &mut self.glb, &mut self.model_s);
+                self.registry
+                    .with_res_mut::<(GameContext,), _>(|(game_ctx,), registry| {
+                        game_ctx.handle_mouse_key(code, is_pressed, &mut self.glb, registry);
+                    });
             }
         }
     }
 
     pub fn handle_mouse_moved(&mut self, position: PhysicalPosition<f64>) {
-        self.game_ctx
-            .handle_mouse_moved(position, &mut self.glb, &mut self.model_s);
+        self.registry
+            .with_res_mut::<(GameContext,), _>(|(game_ctx,), registry| {
+                game_ctx.handle_mouse_moved(position, &mut self.glb, registry);
+            });
     }
     // endregion
 
     pub fn update(&mut self) {
-        self.camera_ctx.update(&self.glb);
-        self.game_ctx.update(&mut self.glb);
+        self.registry
+            .with_res_mut::<(GameContext, CameraContext), _>(|(game_ctx, camera_ctx), _| {
+                camera_ctx.update(&self.glb);
+                game_ctx.update(&mut self.glb);
+            });
     }
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.glb.window.request_redraw();
@@ -247,6 +308,8 @@ impl State {
             });
 
         {
+            let depth_t = self.registry.get::<Texture>("depth").unwrap();
+
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -262,7 +325,7 @@ impl State {
                 timestamp_writes: None,
                 multiview_mask: None,
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_t.view,
+                    view: &depth_t.view,
                     depth_ops: Some(wgpu::Operations {
                         load: wgpu::LoadOp::Clear(1.0),
                         store: wgpu::StoreOp::Store,
@@ -271,9 +334,10 @@ impl State {
                 }),
             });
 
-            self.game_ctx
-                .render(&mut render_pass, &self.glb, &self.model_s,&self.basic_pipeline,&self.camera_ctx);
-
+            self.registry
+                .with_res_mut::<(GameContext,), _>(|(game_ctx,), registry| {
+                    game_ctx.render(&mut render_pass, &self.glb, registry);
+                });
         }
 
         self.glb.queue.submit(std::iter::once(encoder.finish()));

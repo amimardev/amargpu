@@ -1,34 +1,30 @@
 // Vertex shader
 
-// Vertex Attributes are Limited to 16 Bytes (vec4) per Location
-struct InstanceInput {
-    @location(5) model_matrix_0: vec4<f32>,
-    @location(6) model_matrix_1: vec4<f32>,
-    @location(7) model_matrix_2: vec4<f32>,
-    @location(8) model_matrix_3: vec4<f32>,
+struct InstanceData {
+    model_matrix: mat4x4<f32>,
 };
-
-fn get_instance_matrix(instance: InstanceInput) -> mat4x4<f32> {
-    return mat4x4<f32>(
-        instance.model_matrix_0,
-        instance.model_matrix_1,
-        instance.model_matrix_2,
-        instance.model_matrix_3,
-    );
-}
 
 struct CameraUniform {
     view_proj: mat4x4<f32>,
 };
 
-@group(1) @binding(0) // 1.
+fn get_instance_matrix(instance_idx: u32) -> mat4x4<f32> {
+    return instances[instance_idx].model_matrix;
+}
+
+@group(1) @binding(0)
 var<uniform> camera: CameraUniform;
-@group(2) @binding(0)
+
+@group(3) @binding(0)
 var<uniform> loop_timer: f32;
-@group(2) @binding(1)
+@group(3) @binding(1)
 var<uniform> global_color: vec3<f32>;
 
+@group(2) @binding(0)
+var<storage, read> instances: array<InstanceData>;
+
 struct VertexInput {
+    @builtin(instance_index) instance_idx: u32,
     @location(0) position: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
 }
@@ -41,9 +37,8 @@ struct VertexOutput {
 @vertex
 fn vs_main(
     model: VertexInput,
-    instance: InstanceInput,
 ) -> VertexOutput {
-    let model_matrix = get_instance_matrix(instance);
+    let model_matrix = get_instance_matrix(model.instance_idx);
     var out: VertexOutput;
     out.tex_coords = model.tex_coords;
 

@@ -1,4 +1,5 @@
 use crate::{
+    bg_index,
     game_context::GameContext,
     load_shader_str,
     mesh::{
@@ -9,22 +10,21 @@ use crate::{
     texture::{self},
 };
 
-pub struct BasicPipeline {
-    render_pipeline: wgpu::RenderPipeline,
-}
+pub struct DefaultPipeline {}
 
-impl BasicPipeline {
+impl DefaultPipeline {
     pub fn new(
         glb: &GlobalState,
         texture_bg_layout: &wgpu::BindGroupLayout,
         camera_bg_layout: &wgpu::BindGroupLayout,
         uniform_vars_bg_layout: &wgpu::BindGroupLayout,
-    ) -> anyhow::Result<Self> {
+        instances_bg_layout: &wgpu::BindGroupLayout,
+    ) -> anyhow::Result<wgpu::RenderPipeline> {
         let shader = glb
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some("basic_pipeline.wgsl"),
-                source: wgpu::ShaderSource::Wgsl(load_shader_str!("basic_pipeline.wgsl").into()),
+                label: Some("default_pipeline.wgsl"),
+                source: wgpu::ShaderSource::Wgsl(load_shader_str!("default_pipeline.wgsl").into()),
             });
 
         let render_pipeline_layout =
@@ -34,6 +34,7 @@ impl BasicPipeline {
                     bind_group_layouts: &[
                         Some(&texture_bg_layout),
                         Some(&camera_bg_layout),
+                        Some(&instances_bg_layout),
                         Some(&uniform_vars_bg_layout),
                     ],
                     immediate_size: 0,
@@ -42,12 +43,12 @@ impl BasicPipeline {
         let render_pipeline = glb
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("Basic Render Pipeline"),
+                label: Some("Default Render Pipeline"),
                 layout: Some(&render_pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
                     entry_point: Some("vs_main"),
-                    buffers: &[Some(ModelVertex::desc()), Some(InstanceRaw::desc())],
+                    buffers: &[Some(ModelVertex::desc())],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                 },
 
@@ -91,18 +92,10 @@ impl BasicPipeline {
                 cache: None,          // 6.
             });
 
-        Ok(Self { render_pipeline })
+        Ok(render_pipeline)
     }
 
-    pub fn set(&self, render_pass: &mut wgpu::RenderPass) {
-        render_pass.set_pipeline(&self.render_pipeline);
-    }
-
-    pub fn bind_uniform_vars(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        uniform_vars: &GameContext,
-    ) {
-        uniform_vars.bind(2, render_pass);
+    pub fn bind_uniform_vars(render_pass: &mut wgpu::RenderPass, uniform_vars: &GameContext) {
+        uniform_vars.bind(bg_index::GAME, render_pass);
     }
 }

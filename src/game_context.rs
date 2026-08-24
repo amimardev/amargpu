@@ -5,10 +5,7 @@ use wgpu::{Color, util::DeviceExt};
 use winit::{dpi::PhysicalPosition, event::MouseButton, keyboard::KeyCode};
 
 use crate::{
-    basic_pipeline::BasicPipeline,
-    camera::CameraContext,
-    mesh::model::{DrawModel, ModelStore},
-    state::GlobalState,
+    default_pipeline::DefaultPipeline, keys, mesh::model::DrawModel, registry::ResourceRegistry, state::GlobalState,
 };
 pub fn color_to_vec4(color: wgpu::Color) -> glam::Vec4 {
     glam::Vec4::new(
@@ -32,31 +29,30 @@ pub trait GameHandler {
         &mut self,
         position: PhysicalPosition<f64>,
         glb: &mut GlobalState,
-        models: &mut ModelStore,
+        registry: &mut ResourceRegistry,
     );
     fn handle_key(
         &mut self,
         code: KeyCode,
         is_pressed: bool,
         glb: &mut GlobalState,
-        models: &mut ModelStore,
+        registry: &mut ResourceRegistry,
     );
     fn handle_mouse_key(
         &mut self,
         code: MouseButton,
         is_pressed: bool,
         glb: &mut GlobalState,
-        models: &mut ModelStore,
+        registry: &mut ResourceRegistry,
     );
     fn render(
         &self,
         render_pass: &mut wgpu::RenderPass,
         glb: &GlobalState,
-        model_s: &ModelStore,
-        basic_pipeline: &BasicPipeline,
-        camera_ctx: &CameraContext,
+        registry: &mut ResourceRegistry,
     );
 }
+
 pub struct GameContext {
     loop_timer_buffer: wgpu::Buffer,
     global_color_buffer: wgpu::Buffer,
@@ -131,7 +127,7 @@ impl GameContext {
             global_color_buffer,
             bg_layout,
             bg,
-            mouse_move_color : Color::WHITE
+            mouse_move_color: Color::WHITE,
         })
     }
     pub fn bind(&self, index: u32, render_pass: &mut wgpu::RenderPass) {
@@ -144,7 +140,7 @@ impl GameHandler for GameContext {
         let loop_timer_color = Vec4::new(get_loop_timer(), 1f32 - get_loop_timer(), 0.6, 1.0);
         let final_color = (color_to_vec4(self.mouse_move_color) + loop_timer_color) / 2 as f32;
         glb.color = vec4_to_color(final_color);
-        
+
         glb.queue.write_buffer(
             &self.loop_timer_buffer,
             0,
@@ -160,7 +156,7 @@ impl GameHandler for GameContext {
         &mut self,
         position: PhysicalPosition<f64>,
         glb: &mut GlobalState,
-        models: &mut ModelStore,
+        registry: &mut ResourceRegistry,
     ) {
         self.mouse_move_color = wgpu::Color {
             r: position.x / glb.config.width as f64,
@@ -174,7 +170,7 @@ impl GameHandler for GameContext {
         code: KeyCode,
         is_pressed: bool,
         glb: &mut GlobalState,
-        models: &mut ModelStore,
+        registry: &mut ResourceRegistry,
     ) {
         // handle key press
     }
@@ -183,13 +179,13 @@ impl GameHandler for GameContext {
         &self,
         render_pass: &mut wgpu::RenderPass,
         glb: &GlobalState,
-        model_s: &ModelStore,
-        basic_pipeline: &BasicPipeline,
-        camera_ctx: &CameraContext,
+        registry: &mut ResourceRegistry,
     ) {
-        basic_pipeline.set(render_pass);
-        basic_pipeline.bind_uniform_vars(render_pass, &self);
-        model_s.draw_model_instanced(render_pass, "cube", &camera_ctx.bg, "default");
+        let default_pipeline = registry.get::<wgpu::RenderPipeline>(keys::DEFAULT).unwrap();
+
+        render_pass.set_pipeline(&default_pipeline);
+        DefaultPipeline::bind_uniform_vars(render_pass, &self);
+        registry.draw_model_instanced(render_pass, "cube", "default");
     }
 
     fn handle_mouse_key(
@@ -197,7 +193,7 @@ impl GameHandler for GameContext {
         code: MouseButton,
         is_pressed: bool,
         glb: &mut GlobalState,
-        models: &mut ModelStore,
+        registry: &mut ResourceRegistry,
     ) {
         todo!("mouse key handled")
     }

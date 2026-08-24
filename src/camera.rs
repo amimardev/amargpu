@@ -1,8 +1,7 @@
 use crate::state::GlobalState;
 use glam::{Mat4, Vec3};
 use wgpu::util::DeviceExt;
-use winit::keyboard::KeyCode;
-
+use winit::keyboard::KeyCode;  
 pub struct Camera {
     /// Camera position.
     eye: Vec3,
@@ -75,8 +74,7 @@ impl CameraUniform {
     pub fn update_view_proj(&mut self, camera: &Camera) {
         self.view_proj = camera.build_view_projection_matrix().to_cols_array_2d();
     }
-}
-
+} 
 pub struct CameraContext {
     camera: Camera,
     controller: CameraController,

@@ -1,5 +1,6 @@
 use glam::{Mat4, Quat, Vec3};
-use wgpu::util::DeviceExt;
+
+use wgpu::{BindGroupLayout, util::DeviceExt};
 
 use crate::state::GlobalState;
 
@@ -14,44 +15,6 @@ const INSTANCE_DISPLACEMENT: Vec3 = Vec3::new(
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InstanceRaw {
     model: [[f32; 4]; 4],
-}
-impl InstanceRaw {
-    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We'll have to reassemble the mat4 in the shader.
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials, we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5, not conflict with them later
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-            ],
-        }
-    }
 }
 
 pub struct Instance {
@@ -68,12 +31,16 @@ impl Instance {
     }
 }
 
-pub(super) struct InstanceContext {
+pub struct InstanceContext {
     pub(super) instances: Vec<Instance>,
     pub(super) buffer: wgpu::Buffer,
+    pub(super) bg: wgpu::BindGroup,
 }
 impl InstanceContext {
-    pub fn new_default(glb: &GlobalState) -> anyhow::Result<Self> {
+    pub fn new_default(
+        glb: &GlobalState,
+        instances_bg_layout: &wgpu::BindGroupLayout,
+    ) -> anyhow::Result<Self> {
         const SPACE_BETWEEN: f32 = 3.0;
         let instances = (0..NUM_INSTANCES_PER_ROW)
             .flat_map(|z| {
@@ -100,20 +67,25 @@ impl InstanceContext {
             })
             .collect::<Vec<_>>();
         let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
-        let instance_buffer = glb
+        let buffer = glb
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
                 contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::VERTEX,
             });
+        let bg = Self::create_bind_group(glb, &buffer, instances_bg_layout);
         Ok(Self {
             instances,
-            buffer: instance_buffer,
+            buffer,
+            bg,
         })
     }
 
-    pub fn new_one(glb: &GlobalState) -> anyhow::Result<Self> {
+    pub fn new_one(
+        glb: &GlobalState,
+        instances_bg_layout: &wgpu::BindGroupLayout,
+    ) -> anyhow::Result<Self> {
         let instance = Instance {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
@@ -121,16 +93,82 @@ impl InstanceContext {
 
         let instance_data = vec![instance.to_raw()];
         let instances = vec![instance];
-        let instance_buffer = glb
+        let buffer = glb
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Instance Buffer"),
                 contents: bytemuck::cast_slice(&instance_data),
-                usage: wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::VERTEX,
             });
+
+        let bg = Self::create_bind_group(glb, &buffer, instances_bg_layout);
         Ok(Self {
             instances,
-            buffer: instance_buffer,
+            buffer,
+            bg,
         })
+    }
+    pub fn new(
+        glb: &GlobalState,
+        instances_bg_layout: &wgpu::BindGroupLayout,
+        instances: Vec<Instance>,
+    ) -> anyhow::Result<Self> {
+        let instance_data = instances.iter().map(Instance::to_raw).collect::<Vec<_>>();
+        let buffer = glb
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Instance Buffer"),
+                contents: bytemuck::cast_slice(&instance_data),
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::VERTEX,
+            });
+        let bg = Self::create_bind_group(glb, &buffer, instances_bg_layout);
+        Ok(Self {
+            instances,
+            buffer,
+            bg,
+        })
+    }
+
+    /// Creates the BindGroupLayout and BindGroup for the instance buffer.
+    pub fn create_bind_group_layout(glb: &GlobalState) -> wgpu::BindGroupLayout {
+        let layout = glb
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Instance Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        layout
+    }
+
+    /// Creates the BindGroupLayout and BindGroup for the instance buffer.
+    fn create_bind_group(
+        glb: &GlobalState,
+        buffer: &wgpu::Buffer,
+        bg_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        let bind_group = glb.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Instance Bind Group"),
+            layout: &bg_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            }],
+        });
+
+        bind_group
+    }
+
+    pub fn bind(&self, render_pass: &mut wgpu::RenderPass) {
+        render_pass.set_bind_group(3, &self.bg, &[]);
     }
 }
