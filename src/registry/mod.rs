@@ -1,7 +1,19 @@
+mod fetch_macros;
+mod label_index;
+
+use crate::registry::label_index::LabelIndex;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-type Tag<'a> = &'a str;
+pub trait FetchRes: Sized {
+    fn take(registry: &mut ResourceRegistry) -> Option<Self>;
+    fn put_back(self, registry: &mut ResourceRegistry);
+}
+pub trait FetchEntity: Sized {
+    type Maps;
+    fn take(registry: &mut ResourceRegistry) -> Option<Self::Maps>;
+    fn put_back(maps: Self::Maps, registry: &mut ResourceRegistry);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EntityId(u64);
@@ -18,41 +30,6 @@ impl EntityIdAllocator {
 }
 
 #[derive(Default)]
-pub struct LabelIndex {
-    // (TypeId, label) -> set of EntityIds with that label
-    by_label: HashMap<(TypeId, String), Vec<EntityId>>,
-    // reverse lookup: EntityId -> (TypeId, label), for cleanup on despawn
-    by_id: HashMap<EntityId, (TypeId, String)>,
-}
-
-impl LabelIndex {
-    fn insert<T: 'static>(&mut self, label: impl Into<String>, id: EntityId) {
-        let label = label.into();
-        self.by_label
-            .entry((TypeId::of::<T>(), label.clone()))
-            .or_default()
-            .push(id);
-        self.by_id.insert(id, (TypeId::of::<T>(), label));
-    }
-    fn get<T: 'static>(&self, label: &str) -> &[EntityId] {
-        self.by_label
-            .get(&(TypeId::of::<T>(), label.to_string()))
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
-    }
-    fn remove(&mut self, id: EntityId) {
-        if let Some((type_id, label)) = self.by_id.remove(&id) {
-            if let Some(ids) = self.by_label.get_mut(&(type_id, label.clone())) {
-                ids.retain(|&x| x != id);
-                if ids.is_empty() {
-                    self.by_label.remove(&(type_id, label));
-                }
-            }
-        }
-    }
-}
-
-#[derive(Default)]
 pub struct ResourceRegistry {
     stores: HashMap<TypeId, Box<dyn Any>>, // TypeId -> HashMap<EntityId, T>
     resources: HashMap<TypeId, Box<dyn Any>>, // unchanged, singleton resources
@@ -61,6 +38,7 @@ pub struct ResourceRegistry {
 }
 
 impl ResourceRegistry {
+    // region: CRUD entities
     pub fn spawn<T: 'static>(&mut self, label: Option<&str>, value: T) -> EntityId {
         let id = self.ids.next();
         self.stores
@@ -130,7 +108,31 @@ impl ResourceRegistry {
         self.labels.remove(id);
         Some(value)
     }
+    fn remove_map<T: 'static>(&mut self) -> Option<HashMap<EntityId, T>> {
+        Some(
+            *self
+                .stores
+                .remove(&TypeId::of::<T>())?
+                .downcast::<HashMap<EntityId, T>>()
+                .unwrap(),
+        )
+    }
+    fn insert_map<T: 'static>(&mut self, map: HashMap<EntityId, T>) {
+        self.stores.insert(TypeId::of::<T>(), Box::new(map));
+    }
 
+    pub fn with_maps_mut<Tup: FetchEntity, R>(
+        &mut self,
+        f: impl FnOnce(&mut Tup::Maps, &mut Self) -> R,
+    ) -> Option<R> {
+        let mut maps = Tup::take(self)?;
+        let result = f(&mut maps, self);
+        Tup::put_back(maps, self);
+        Some(result)
+    }
+    // endregion
+   
+    // region: CRUD resources
     pub fn insert_res<T: 'static>(&mut self, value: T) {
         self.resources
             .entry(TypeId::of::<T>())
@@ -161,81 +163,5 @@ impl ResourceRegistry {
         tup.put_back(self);
         Some(result)
     }
-    fn remove_map<T: 'static>(&mut self) -> Option<HashMap<EntityId, T>> {
-        Some(
-            *self
-                .stores
-                .remove(&TypeId::of::<T>())?
-                .downcast::<HashMap<EntityId, T>>()
-                .unwrap(),
-        )
-    }
-    fn insert_map<T: 'static>(&mut self, map: HashMap<EntityId, T>) {
-        self.stores.insert(TypeId::of::<T>(), Box::new(map));
-    }
-
-    pub fn with_maps_mut<Tup: FetchEntity, R>(
-        &mut self,
-        f: impl FnOnce(&mut Tup::Maps, &mut Self) -> R,
-    ) -> Option<R> {
-        let mut maps = Tup::take(self)?;
-        let result = f(&mut maps, self);
-        Tup::put_back(maps, self);
-        Some(result)
-    }
+    // endregion
 }
-
-macro_rules! impl_fetch_res {
-    ($($t:ident),+) => {
-        impl<$($t: 'static),+> FetchRes for ($($t,)+) {
-            fn take(registry: &mut ResourceRegistry) -> Option<Self> {
-                Some(($(registry.remove_res::<$t>()?,)+))
-            }
-            fn put_back(self, registry: &mut ResourceRegistry) {
-                #[allow(non_snake_case)]
-                let ($($t,)+) = self;
-                $(registry.insert_res($t);)+
-            }
-        }
-    };
-}
-pub trait FetchRes: Sized {
-    fn take(registry: &mut ResourceRegistry) -> Option<Self>;
-    fn put_back(self, registry: &mut ResourceRegistry);
-}
-
-impl_fetch_res!(A);
-impl_fetch_res!(A, B);
-impl_fetch_res!(A, B, C);
-impl_fetch_res!(A, B, C, D);
-impl_fetch_res!(A, B, C, D, E);
-
-pub trait FetchEntity: Sized {
-    type Maps;
-    fn take(registry: &mut ResourceRegistry) -> Option<Self::Maps>;
-    fn put_back(maps: Self::Maps, registry: &mut ResourceRegistry);
-}
-
-macro_rules! impl_fetch_entity {
-    ($($t:ident),+) => {
-        impl<$($t: 'static),+> FetchEntity for ($($t,)+) {
-            type Maps = ($(HashMap<EntityId, $t>,)+);
-
-            fn take(registry: &mut ResourceRegistry) -> Option<Self::Maps> {
-                Some(($(registry.remove_map::<$t>()?,)+))
-            }
-
-            fn put_back(maps: Self::Maps, registry: &mut ResourceRegistry) {
-                #[allow(non_snake_case)]
-                let ($($t,)+) = maps;
-                $(registry.insert_map($t);)+
-            }
-        }
-    };
-}
-
-impl_fetch_entity!(A);
-impl_fetch_entity!(A, B);
-impl_fetch_entity!(A, B, C);
-impl_fetch_entity!(A, B, C, D);
-impl_fetch_entity!(A, B, C, D, E);

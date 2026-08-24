@@ -5,8 +5,9 @@ mod game_context;
 mod mesh;
 mod registry;
 mod state;
-mod texture;
-use crate::{app::App, texture::Texture};
+mod texture; 
+
+use crate::{app::App};
 
 use winit::event_loop::EventLoop;
 
