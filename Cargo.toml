@@ -18,7 +18,7 @@ image = { version = "0.25.10", default-features = false, features = [
 glam = { version = "0.33.3", features = ["bytemuck"] }
 tobj = { version = "3.2", default-features = false, features = ["async"] }
 
-amarengine = { path = "crates/amarengine" }
+amar_engine = { path = "crates/amar_engine" }
 
 [build-dependencies]
 anyhow = "1.0"

@@ -1,4 +1,4 @@
-use amarengine::{ 
+use amar_engine::{ 
     mesh::model::{ModelVertex, Vertex},
     state::GlobalState,
     texture::Texture,

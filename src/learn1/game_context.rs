@@ -4,7 +4,7 @@ use glam::Vec4;
 use wgpu::{Color, util::DeviceExt};
 use winit::{dpi::PhysicalPosition, event_loop::ActiveEventLoop};
 
-use amarengine::{
+use amar_engine::{
     input_handler::InputHandler,
     registry::{registry_view::PluginRegistryView, static_ptr::StaticRef},
     state::GlobalState,

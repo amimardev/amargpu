@@ -1,6 +1,6 @@
 use glam::{Mat4, Quat, Vec3};
 
-use wgpu::{BindGroupLayout, util::DeviceExt};
+use wgpu::{util::DeviceExt};
 
 use crate::{bg_index, state::GlobalState};
 

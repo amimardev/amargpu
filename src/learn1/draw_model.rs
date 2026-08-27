@@ -1,4 +1,4 @@
-use amarengine::{
+use amar_engine::{
     bg_index, keys,
     mesh::{
         instanceb::InstanceContext,

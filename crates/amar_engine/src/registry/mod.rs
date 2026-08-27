@@ -5,8 +5,7 @@ pub mod static_ptr;
 pub mod sys_runner;
 
 use winit::event_loop::ActiveEventLoop;
-
-use crate::plugins::Plugin;
+ 
 use crate::registry::label_index::LabelIndex;
 use crate::registry::registry_view::PluginRegistryView;
 use crate::registry::static_ptr::StaticRef;

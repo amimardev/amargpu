@@ -53,13 +53,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
-name = "amarengine"
+name = "amar_engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "bytemuck",
  "env_logger",
  "fs_extra",
+ "getset",
  "glam",
  "glob",
  "image",
@@ -74,7 +75,7 @@ dependencies = [
 name = "amargpu"
 version = "0.1.0"
 dependencies = [
- "amarengine",
+ "amar_engine",
  "anyhow",
  "bytemuck",
  "env_logger",
@@ -689,6 +690,17 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi 6.0.0",
+]
+
+[[package]]
+name = "getset"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cf442baaabe4213ce7d1239afc26c039180b6456da2cededa316ae2c8a77a77"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

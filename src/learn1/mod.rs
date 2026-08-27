@@ -3,7 +3,7 @@ mod default_pipeline;
 mod draw_model;
 mod game_context;
 
-use amarengine::{
+use amar_engine::{
     keys,
     mesh::resource::load_model,
     plugins::Plugin,
@@ -61,7 +61,7 @@ impl Plugin for Learn1Plugin {
             .unwrap(),
         );
 
-        register.spawn(Some(amarengine::keys::DEFAULT), default_pipeline);
+        register.spawn(Some(amar_engine::keys::DEFAULT), default_pipeline);
 
         register.insert_res(camera_ctx);
         register.insert_res(game_ctx);
@@ -113,7 +113,7 @@ fn sys_handle_render(
     registry: PluginRegistryView,
 ) {
     let default_pipeline = *registry
-        .get_by_label::<wgpu::RenderPipeline>(amarengine::keys::DEFAULT)
+        .get_by_label::<wgpu::RenderPipeline>(amar_engine::keys::DEFAULT)
         .first()
         .unwrap();
 
@@ -122,6 +122,6 @@ fn sys_handle_render(
     registry.draw_model_instanced(
         render_pass,
         other_keys::models::CUBE,
-        amarengine::keys::DEFAULT,
+        amar_engine::keys::DEFAULT,
     );
 }

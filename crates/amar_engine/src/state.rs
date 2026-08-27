@@ -3,7 +3,7 @@ use crate::{
     keys,
     mesh::instanceb::InstanceContext,
     plugins::{Plugin, PluginHandler},
-    registry::{EventLoopRef, ResourceRegistry},
+    registry::{ResourceRegistry},
     texture::Texture,
 };
 use std::sync::Arc;

@@ -1,4 +1,4 @@
-use amarengine::{
+use amar_engine::{
     bg_index, input_handler::InputHandler, registry::registry_view::PluginRegistryView,
     state::GlobalState,
 };
