@@ -24,6 +24,7 @@ pub type ArchetypeSet = HashSet<ArchetypeId>;
 pub trait Resource: 'static {}
 pub trait Component: 'static {}
 
+#[derive(Debug, Clone)]
 pub struct EntityInfo {
     archetype_id: ArchetypeId,
     row: u32,
@@ -133,7 +134,10 @@ impl World {
         archetype.get_component::<Comp>(entity_info.row)
     }
 
-    fn get_component_mut<Comp: Component>(&mut self, entity: EntityId) -> Result<&mut Comp, ECSError> {
+    fn get_component_mut<Comp: Component>(
+        &mut self,
+        entity: EntityId,
+    ) -> Result<&mut Comp, ECSError> {
         let Some(entity_info) = self.entity_index.get(&entity) else {
             return Err(ECSError::InvalidEntityId(entity));
         };
@@ -213,7 +217,7 @@ impl World {
         }
 
         let (new_archetype, deleted_component_idx) =
-            src.new_from_add(self.current_arch_id.next(), ComponentInfo::new::<Comp>())?;
+            src.new_from_delete(self.current_arch_id.next(), ComponentInfo::new::<Comp>())?;
 
         // region: update indexes
         self.archetype_index
@@ -265,31 +269,116 @@ impl World {
             .and_then(|boxed| (boxed as &mut dyn Any).downcast_mut::<R>())
     }
 
-    /*
     pub fn add_component<Comp: Component>(
         &mut self,
         entity: EntityId,
-        component: Comp,
+        mut component: Comp,
     ) -> Result<(), ECSError> {
-        let Some(entity_info) = self.entity_index.get_mut(&entity) else {
+        let Some(entity_info_copy) = self.entity_index.get_mut(&entity).cloned() else {
             return Err(ECSError::InvalidEntityId(entity));
         };
-        let new_archetype_id = self.add_to_archetype::<Comp>(entity_info.archetype_id)?;
+        let new_archetype_id = self.add_to_archetype::<Comp>(entity_info_copy.archetype_id)?;
 
-        let Some(old_archetype) = self.archetypes.get(&entity_info.archetype_id) else {
+        let Some(old_archetype) = self.archetypes.get_mut(&entity_info_copy.archetype_id) else {
             return Err(ECSError::ArchetypeNotFound(new_archetype_id));
         };
 
-        let Some(new_archetype) = self.archetypes.get(&new_archetype_id) else {
+        let mut old_entity_data = old_archetype.remove_row_ptr(entity_info_copy.row)?;
+
+        let new_component_index = old_entity_data
+            .binary_search_by_key(&TypeId::of::<Comp>(), |e| e.1.type_id())
+            .err()
+            .unwrap();
+
+        let component_ptr = NonNull::new(&mut component as *mut Comp as *mut u8).unwrap();
+        old_entity_data.insert(
+            new_component_index,
+            (component_ptr, ComponentInfo::new::<Comp>()),
+        );
+
+        let Some(new_archetype) = self.archetypes.get_mut(&new_archetype_id) else {
             return Err(ECSError::ArchetypeNotFound(new_archetype_id));
         };
 
-        let mut old_entity_data = old_archetype.get_row(entity_info.row)?;
-        old_entity_data
-        entity_info.row = old_archetype.insert_row(old_entity_data)?;
+        let Some(entity_info_ref) = self.entity_index.get_mut(&entity) else {
+            return Err(ECSError::InvalidEntityId(entity));
+        };
+        entity_info_ref.row = new_archetype.insert_row_ptr(&old_entity_data)?;
+        entity_info_ref.archetype_id = new_archetype_id;
 
-        entity_info.archetype_id = new_archetype_id;
+        // free all pointer copies
+        for (index, (ptr, info)) in old_entity_data.iter().enumerate() {
+            if index == new_component_index {
+                continue;
+            }
+            let size = info.size() as usize;
+            if size > 0 {
+                let layout =
+                    std::alloc::Layout::from_size_align(size, info.align() as usize).unwrap();
+                unsafe {
+                    std::alloc::dealloc(ptr.as_ptr(), layout);
+                }
+            }
+        }
+
+        // component was freed with the pointers, so to avoid double free we do this
+        std::mem::forget(component);
 
         Ok(())
-    } */
+    }
+    pub fn remove_component<Comp: Component>(&mut self, entity: EntityId) -> Result<(), ECSError> {
+        let Some(entity_info_copy) = self.entity_index.get_mut(&entity).cloned() else {
+            return Err(ECSError::InvalidEntityId(entity));
+        };
+        let new_archetype_id = self.remove_from_archetype::<Comp>(entity_info_copy.archetype_id)?;
+
+        let Some(old_archetype) = self.archetypes.get_mut(&entity_info_copy.archetype_id) else {
+            return Err(ECSError::ArchetypeNotFound(new_archetype_id));
+        };
+
+        let mut old_entity_data = old_archetype.remove_row_ptr(entity_info_copy.row)?;
+
+        let remove_component_index = old_entity_data
+            .binary_search_by_key(&TypeId::of::<Comp>(), |e| e.1.type_id())
+            .ok()
+            .unwrap();
+
+        let (to_free_component_ptr, to_free_component_info) =
+            old_entity_data.remove(remove_component_index);
+
+        let Some(new_archetype) = self.archetypes.get_mut(&new_archetype_id) else {
+            return Err(ECSError::ArchetypeNotFound(new_archetype_id));
+        };
+
+        let Some(entity_info_ref) = self.entity_index.get_mut(&entity) else {
+            return Err(ECSError::InvalidEntityId(entity));
+        };
+        entity_info_ref.row = new_archetype.insert_row_ptr(&old_entity_data)?;
+        entity_info_ref.archetype_id = new_archetype_id;
+
+        // free all pointer copies
+        for (ptr, info) in old_entity_data.iter() {
+            let size = info.size() as usize;
+            if size > 0 {
+                let layout =
+                    std::alloc::Layout::from_size_align(size, info.align() as usize).unwrap();
+                unsafe {
+                    std::alloc::dealloc(ptr.as_ptr(), layout);
+                }
+            }
+        }
+
+        // freeying component
+        let size = to_free_component_info.size() as usize;
+        if size != 0 {
+            let layout =
+                std::alloc::Layout::from_size_align(size, to_free_component_info.align() as usize)
+                    .unwrap();
+            unsafe {
+                std::alloc::dealloc(to_free_component_ptr.as_ptr(), layout);
+            }
+        }
+
+        Ok(())
+    }
 }

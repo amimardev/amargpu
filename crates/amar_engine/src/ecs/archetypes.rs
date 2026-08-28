@@ -107,7 +107,7 @@ impl_bundle!(T1, T2, T3, T4, T5, T6);
 /// order matters in comparaison, so to eliminate order difference, we must keep the vec ordered by TypeId
 pub type ArchetypeComponents = Vec<TypeId>;
 
-#[derive(Debug, Clone, Copy,CopyGetters)]
+#[derive(Debug, Clone, Copy, CopyGetters)]
 pub struct ComponentInfo {
     #[getset(get_copy = "pub")]
     type_id: TypeId,
@@ -115,6 +115,7 @@ pub struct ComponentInfo {
     size: u32,
     /// smallest power of 2 bigger then self.size  
     /// used for column allocation
+    #[getset(get_copy = "pub")]
     align: u32,
     drop_fn: unsafe fn(*mut u8),
 }
@@ -126,7 +127,7 @@ impl ComponentInfo {
             align: align_of::<Comp>() as u32,
             drop_fn: Self::drop_component::<Comp>,
         }
-    } 
+    }
     unsafe fn drop_component<T>(ptr: *mut u8) {
         unsafe { std::ptr::drop_in_place(ptr.cast::<T>()) };
     }
@@ -198,11 +199,27 @@ impl Column {
         }
     }
 
-    pub fn get_ptr(&self, row: u32) -> Result<NonNull<u8>, ColumnError> {
+    pub fn get_ptr_copy(&self, row: u32) -> Result<NonNull<u8>, ColumnError> {
         if row >= self.count {
             return Err(ColumnError::ColumnRowNotExistant(row));
         }
-        unsafe { Ok(self.elements.add((row * self.element_info.size) as usize)) }
+
+        let size = self.element_info.size as usize;
+        let align = self.element_info.align as usize;
+        if size == 0 {
+            return Ok(NonNull::dangling());
+        }
+
+        unsafe {
+            let layout = Layout::from_size_align(size, align).unwrap();
+            
+            let src_ptr = self.elements.add((row * self.element_info.size) as usize);
+            let dst_ptr = NonNull::new(alloc(layout)).unwrap();
+
+            std::ptr::copy_nonoverlapping(src_ptr.as_ptr(), dst_ptr.as_ptr(), size);
+
+            Ok(dst_ptr)
+        }
     }
 
     /// Inserts a component at the given row index or appends it to the end if `row` is `None`.
@@ -234,6 +251,36 @@ impl Column {
 
             // will have no memory effect if COMP is a ZST
             ptr.write(component);
+        }
+
+        Ok(())
+    }
+
+    /// Copies content from the ptr.
+    pub fn insert_from_ptr(
+        &mut self,
+        component_ptr: NonNull<u8>,
+        row: u32,
+    ) -> Result<(), ColumnError> {
+        if row == self.count {
+            self.count += 1;
+        }
+        if row > self.count {
+            return Err(ColumnError::ColumnGivenRowOutOfBounds(row));
+        }
+        if self.count >= self.capacity {
+            self.grow();
+        }
+
+        let offset = (self.element_info.size * row) as usize;
+        unsafe {
+            let dst_ptr = self.elements.add(offset);
+
+            std::ptr::copy_nonoverlapping(
+                component_ptr.as_ptr(),            // *const u8, the component_ptr you built
+                dst_ptr.as_ptr(),                  // *mut u8, the destination slot in the column
+                self.element_info.size() as usize, // how many bytes to copy
+            );
         }
 
         Ok(())
@@ -504,6 +551,30 @@ impl Archetype {
             _ => Ok(()),
         })
     }
+    /// row is managed by world,
+    /// if entity_delete_list is empty then row must be provided as None,
+    /// if not then pop and give the given value to row
+    fn insert_component_from_ptr(
+        &mut self,
+        component_ptr: NonNull<u8>,
+        row: u32,
+        column_index: u32,
+    ) -> Result<(), ECSError> {
+        let column = self.columns.get_mut(column_index as usize).unwrap();
+        column
+            .insert_from_ptr(component_ptr, row)
+            .or_else(|e| match e {
+                ColumnError::ColumnComponentTypeMismatch(col_id, comp_id) => Err(
+                    ECSError::ColumnComponentTypeMismatch(self.id, row, col_id, comp_id),
+                ),
+                ColumnError::ColumnRowNotExistant(r) => Err(ECSError::ColumnRowNotExistant(
+                    self.id,
+                    column_index as u32,
+                    r,
+                )),
+                _ => Ok(()),
+            })
+    }
 
     fn remove_component(&mut self, component_id: TypeId, row: u32) -> Result<(), ECSError> {
         let Ok(column_index) = self.component_ids.binary_search(&component_id) else {
@@ -558,7 +629,10 @@ impl Archetype {
     }
 
     /// Retrieves raw memory pointers and metadata for all components at a specific row.
-    pub fn get_row(&self, row: u32) -> Result<Vec<(NonNull<u8>, ComponentInfo)>, ECSError> {
+    pub fn remove_row_ptr(
+        &mut self,
+        row: u32,
+    ) -> Result<Vec<(NonNull<u8>, ComponentInfo)>, ECSError> {
         // Validate row boundaries and tombstone state
         if row >= self.current_entity_count || self.entity_remove_list.contains(&row) {
             return Err(ECSError::ArchetypeRowNotExistant(self.id, row));
@@ -567,7 +641,7 @@ impl Archetype {
         let mut row_components = Vec::with_capacity(self.columns.len());
 
         for (column_idx, column) in self.columns.iter().enumerate() {
-            match column.get_ptr(row) {
+            match column.get_ptr_copy(row) {
                 Ok(ptr) => {
                     row_components.push((ptr, column.element_info));
                 }
@@ -581,39 +655,29 @@ impl Archetype {
                 _ => {}
             }
         }
-
+        self.entity_remove_list.push(row);
         Ok(row_components)
     }
-    /*
+
     /// put raw memory pointers and metadata for all components of the given entity_data.
-    pub fn insert_row(
-        &self,
-        components: Vec<(NonNull<u8>, ComponentInfo)>,
+    pub fn insert_row_ptr(
+        &mut self,
+        components: &Vec<(NonNull<u8>, ComponentInfo)>,
     ) -> Result<u32, ECSError> {
-        // Validate row boundaries and tombstone state
-        if row >= self.current_entity_count || self.entity_remove_list.contains(&row) {
-            return Err(ECSError::ArchetypeRowNotExistant(self.id, row));
-        }
-
-        let mut row_components = Vec::with_capacity(self.columns.len());
-
-        for (column_idx, column) in self.columns.iter().enumerate() {
-            match column.get_ptr(row) {
-                Ok(ptr) => {
-                    row_components.push((ptr, column.element_info));
-                }
-                Err(ColumnError::ColumnRowNotExistant(row)) => {
-                    return Err(ECSError::ColumnRowNotExistant(
-                        self.id,
-                        column_idx as u32,
-                        row,
-                    ));
-                }
-                _ => {}
+        let row = match self.entity_remove_list.pop() {
+            Some(row) => row,
+            None => {
+                let insert_row = self.current_entity_count;
+                self.current_entity_count += 1;
+                insert_row
             }
+        };
+
+        for (index, (ptr, _)) in components.iter().enumerate() {
+            // ptr: &NonNull<u8>, info: &ComponentInfo
+            self.insert_component_from_ptr(*ptr, row, index as u32)?;
         }
 
-        Ok(row_components)
+        Ok(row)
     }
-    */
 }
