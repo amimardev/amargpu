@@ -4,8 +4,7 @@ pub mod mesh;
 pub mod plugins;
 pub mod registry;
 pub mod state;
-pub mod texture;
-mod ecs;
+pub mod texture; 
 
 pub mod bg_index {
     pub const DIFFUSE: u32 = 0;
