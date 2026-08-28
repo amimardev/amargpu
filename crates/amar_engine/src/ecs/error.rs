@@ -1,7 +1,8 @@
 use core::fmt;
 use std::any::TypeId;
 
-use crate::ecs::{EntityId, archetypes::ArchetypeId};
+use crate::ecs::types::{ArchetypeId, EntityId};
+ 
 
 #[derive(Debug)]
 pub enum ECSError {
@@ -24,7 +25,7 @@ pub(super) enum ColumnError {
     // ( column_internal_type_id , component_type_id )
     ColumnComponentTypeMismatch(TypeId, TypeId),
     ColumnRowNotExistant(u32),
-    ColumnGivenRowOutOfBounds(u32)
+    ColumnGivenRowOutOfBounds(u32),
 }
 
 // 1. User-facing error message string formatting
