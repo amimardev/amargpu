@@ -1,10 +1,11 @@
-use crate::ecs::Component;
-use crate::ecs::ECSError;
-use crate::ecs::error::ColumnError;
-use crate::ecs::types::ArchetypeComponents;
-use crate::ecs::types::ArchetypeId;
-use crate::ecs::types::ComponentInfo;
-use crate::ecs::types::RawComponent;
+use crate::Component;
+use crate::ECSError;
+use crate::error::ColumnError;
+use crate::error::ColumnResultExt;
+use crate::types::ArchetypeComponents;
+use crate::types::ArchetypeId;
+use crate::types::ComponentInfo;
+use crate::types::RawComponent;
 use std::alloc::Layout;
 use std::alloc::alloc;
 use std::alloc::dealloc;
@@ -251,7 +252,7 @@ impl Column {
 
         let offset = (self.element_info.size() * row) as usize;
         unsafe {
-            let ptr = self.elements.add(offset); 
+            let ptr = self.elements.add(offset);
             Ok(RawComponent::new_from_ptr(ptr, self.element_info))
         }
     }
@@ -487,17 +488,9 @@ impl Archetype {
             ));
         };
         let column = self.columns.get_mut(column_index).unwrap();
-        column.insert(value, row).or_else(|e| match e {
-            ColumnError::ColumnComponentTypeMismatch(col_id, comp_id) => Err(
-                ECSError::ColumnComponentTypeMismatch(self.id, row, col_id, comp_id),
-            ),
-            ColumnError::ColumnRowNotExistant(r) => Err(ECSError::ColumnRowNotExistant(
-                self.id,
-                column_index as u32,
-                r,
-            )),
-            _ => Ok(()),
-        })
+        column
+            .insert(value, row)
+            .map_ecs_err(self.id, column_index as u32)
     }
     /// row is managed by world,
     /// if entity_delete_list is empty then row must be provided as None,
@@ -511,17 +504,7 @@ impl Archetype {
         let column = self.columns.get_mut(column_index as usize).unwrap();
         column
             .insert_raw_component(raw_component, row)
-            .or_else(|e| match e {
-                ColumnError::ColumnComponentTypeMismatch(col_id, comp_id) => Err(
-                    ECSError::ColumnComponentTypeMismatch(self.id, row, col_id, comp_id),
-                ),
-                ColumnError::ColumnRowNotExistant(r) => Err(ECSError::ColumnRowNotExistant(
-                    self.id,
-                    column_index as u32,
-                    r,
-                )),
-                _ => Ok(()),
-            })
+            .map_ecs_err(self.id, column_index)
     }
 
     fn remove_component(
@@ -537,18 +520,9 @@ impl Archetype {
         };
 
         let column = self.columns.get_mut(column_index).unwrap();
-
-        column.delete(component_id, row).or_else(|e| match e {
-            ColumnError::ColumnComponentTypeMismatch(col_id, comp_id) => Err(
-                ECSError::ColumnComponentTypeMismatch(self.id, row, col_id, comp_id),
-            ),
-            ColumnError::ColumnRowNotExistant(r) => Err(ECSError::ColumnRowNotExistant(
-                self.id,
-                column_index as u32,
-                r,
-            )),
-            _ => panic!("imposible branch"),
-        })
+        column
+            .delete(component_id, row)
+            .map_ecs_err(self.id, column_index as u32)
     }
     pub(super) fn remove_row(&mut self, row: u32) -> Result<(), ECSError> {
         if self.entity_remove_list.contains(&row) {
@@ -581,8 +555,7 @@ impl Archetype {
     }
 
     /// Retrieves raw memory pointers and metadata for all components at a specific row.
-    pub fn remove_row_ptr(&mut self, row: u32) -> Result<Vec<RawComponent>, ECSError> {
-        // Validate row boundaries and tombstone state
+    pub fn remove_raw_component(&mut self, row: u32) -> Result<Vec<RawComponent>, ECSError> {
         if row >= self.current_entity_count || self.entity_remove_list.contains(&row) {
             return Err(ECSError::ArchetypeRowNotExistant(self.id, row));
         }
@@ -590,20 +563,12 @@ impl Archetype {
         let mut row_components = Vec::with_capacity(self.columns.len());
 
         for (column_idx, column) in self.columns.iter().enumerate() {
-            match column.get_raw_component(row) {
-                Ok(raw_component) => {
-                    row_components.push(raw_component);
-                }
-                Err(ColumnError::ColumnRowNotExistant(row)) => {
-                    return Err(ECSError::ColumnRowNotExistant(
-                        self.id,
-                        column_idx as u32,
-                        row,
-                    ));
-                }
-                _ => {}
-            }
+            let raw_component = column
+                .get_raw_component(row)
+                .map_ecs_err(self.id, column_idx as u32)?;
+            row_components.push(raw_component);
         }
+
         self.entity_remove_list.push(row);
         Ok(row_components)
     }

@@ -110,15 +110,23 @@ impl RawComponent {
         Self { buffer, info }
     }
     /// Copies the content of `ptr` into a new allocation, handling ZSTs gracefully.
-    pub fn new<Comp: Component>(mut component: Comp) -> Self {
-        let component_ptr = NonNull::new(&mut component as *mut Comp as *mut u8).unwrap();
+    pub fn new<Comp: Component>(component: Comp) -> Self {
+        let info = ComponentInfo::new::<Comp>();
+        let component_ptr = NonNull::from(&component).cast();
+        let raw_component = Self::new_from_ptr(component_ptr, info);
         std::mem::forget(component);
-        Self {
-            buffer: component_ptr,
-            info: ComponentInfo::new::<Comp>(),
+        raw_component
+    }
+    fn free_buffer(&self) {
+        let size = self.info.size() as usize;
+        if size > 0 {
+            let layout = Layout::from_size_align(size, self.info.align() as usize)
+                .expect("Invalid layout parameters in RawComponent");
+            unsafe {
+                dealloc(self.buffer.as_ptr(), layout);
+            }
         }
     }
-
     pub fn move_to(self, dst: NonNull<u8>) {
         let size = self.info.size() as usize;
         if size != 0 {
@@ -127,15 +135,8 @@ impl RawComponent {
             }
         }
 
-        // Deallocate ONLY the temporary RawComponent buffer without running self.info.drop()
-        if size > 0 {
-            let layout = Layout::from_size_align(size, self.info.align() as usize).unwrap();
-            unsafe {
-                dealloc(self.buffer.as_ptr(), layout);
-            }
-        }
-
         // Suppress `RawComponent::drop` so `self.info.drop()` is NOT called on copied data
+        self.free_buffer();
         std::mem::forget(self);
     }
 
@@ -153,15 +154,8 @@ impl RawComponent {
             // so we must free the old pointer
             let component = std::ptr::read(self.buffer.as_ptr().cast::<Comp>());
 
-            // 2. Free the RawComponent's temporary byte buffer (if non-ZST)
-            let size = self.info.size() as usize;
-            if size > 0 {
-                let layout = Layout::from_size_align(size, self.info.align() as usize)
-                    .expect("Invalid layout parameters in RawComponent");
-                dealloc(self.buffer.as_ptr(), layout);
-            }
-
             // 3. Suppress `RawComponent::drop` to prevent running self.info.drop() or double dealloc
+            self.free_buffer();
             std::mem::forget(self);
 
             component
@@ -174,14 +168,6 @@ impl Drop for RawComponent {
         // 1. Run the inner component's destructor (even for ZSTs)
         self.info.drop(self.buffer);
 
-        // 2. Deallocate the byte buffer if not a ZST
-        let size = self.info.size() as usize;
-        if size > 0 {
-            let layout = Layout::from_size_align(size, self.info.align() as usize)
-                .expect("Invalid layout parameters in RawComponent");
-            unsafe {
-                dealloc(self.buffer.as_ptr(), layout);
-            }
-        }
+        self.free_buffer();
     }
 }

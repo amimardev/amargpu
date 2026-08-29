@@ -1,7 +1,7 @@
 use core::fmt;
 use std::any::TypeId;
 
-use crate::ecs::types::{ArchetypeId, EntityId};
+use crate::types::{ArchetypeId, EntityId};
  
 
 #[derive(Debug)]
@@ -74,5 +74,23 @@ impl fmt::Display for ECSError {
                 write!(f, "component {component_id:?} not yet registered")
             }
         }
+    }
+}
+
+
+pub(super) trait ColumnResultExt<T> {
+    fn map_ecs_err(self, archetype_id: ArchetypeId, column_idx: u32) -> Result<T, ECSError>;
+}
+
+impl<T> ColumnResultExt<T> for Result<T, ColumnError> {
+    fn map_ecs_err(self, archetype_id: ArchetypeId, column_idx: u32) -> Result<T, ECSError> {
+        self.map_err(|err| match err {
+            ColumnError::ColumnComponentTypeMismatch(col_type, comp_type) => {
+                ECSError::ColumnComponentTypeMismatch(archetype_id, column_idx, col_type, comp_type)
+            }
+            ColumnError::ColumnRowNotExistant(row) | ColumnError::ColumnGivenRowOutOfBounds(row) => {
+                ECSError::ColumnRowNotExistant(archetype_id, column_idx, row)
+            }
+        })
     }
 }

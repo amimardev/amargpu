@@ -1,0 +1,9 @@
+struct Query{ 
+}
+
+
+trait QuerHandler{
+    
+
+}
+
